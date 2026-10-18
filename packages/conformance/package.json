@@ -1,0 +1,19 @@
+{
+  "name": "@cge/conformance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {"@cge/core":"workspace:*","@cge/app":"workspace:*","@cge/config":"workspace:*","@cge/helpers":"workspace:*","@cge/adapter-store-memory":"workspace:*","@cge/adapter-store-sqlite":"workspace:*","@cge/adapter-transport-http":"workspace:*","@cge/adapter-transport-ws":"workspace:*","@cge/adapter-authz-static":"workspace:*","@cge/adapter-timer-host":"workspace:*"},
+  "devDependencies": {
+    "vitest": "5.0.5"
+  }
+}
