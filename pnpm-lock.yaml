@@ -253,6 +253,9 @@ importers:
 
   tools/guardrails:
     devDependencies:
+      dependency-cruiser:
+        specifier: 18.6.0
+        version: 18.6.0
       eslint:
         specifier: 10.13.0
         version: 10.13.0

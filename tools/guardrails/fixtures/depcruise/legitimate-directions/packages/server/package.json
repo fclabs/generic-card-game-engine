@@ -1,0 +1,7 @@
+{
+  "name": "@cge/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {"@cge/core":"workspace:*","@cge/app":"workspace:*","@cge/config":"workspace:*","@cge/helpers":"workspace:*","@cge/adapter-store-memory":"workspace:*"}
+}

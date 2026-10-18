@@ -1,0 +1,7 @@
+{
+  "name": "@cge/conformance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {"@cge/adapter-store-memory":"workspace:*","@cge/helpers":"workspace:*","@cge/core":"workspace:*","@cge/app":"workspace:*","@cge/config":"workspace:*"}
+}
