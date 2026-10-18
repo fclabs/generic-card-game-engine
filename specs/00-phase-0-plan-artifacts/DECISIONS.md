@@ -53,3 +53,9 @@
 **Decision**: Not acted on in Iteration 1 (no ESLint/depcruise yet). They remain binding for Iterations 3–6.
 **Rejected**: Premature stub directories.
 **Consequences**: Iteration 3 must create `eslint/` as a plain directory (not a 14th workspace member).
+
+## D-010: Separate Vitest config for guardrails  (Iteration 2)
+**Context**: FR-010's `pnpm test` must not run `tools/guardrails/**`; FR-013 needs a dedicated `test:guardrails` entry point.
+**Decision**: Root `vitest.config.ts` includes only `packages/**/*.test.ts` and `games/**/*.test.ts` (excludes `tools/guardrails/**`). Guardrail suite uses `vitest.guardrails.config.ts` selected via `vitest run --config vitest.guardrails.config.ts`. Coverage stays off unless `--coverage` (`test:coverage`).
+**Rejected**: Single config with CLI `--dir` only (easy to accidentally run the wrong include); Vitest `projects` workspace (heavier than needed for Phase 0).
+**Consequences**: Iteration 5+ adds real guardrail tests under the same config; fixtures path is already excluded there.
