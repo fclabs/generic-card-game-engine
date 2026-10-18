@@ -12,7 +12,9 @@
       "default": "./dist/index.js"
     }
   },
-  "dependencies": {"@cge/core":"workspace:*"},
+  "dependencies": {
+    "@cge/core": "workspace:*"
+  },
   "devDependencies": {
     "vitest": "5.0.5"
   }

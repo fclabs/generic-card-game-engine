@@ -8,5 +8,9 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"],
-  "references": [{"path":"../../core"},{"path":"../../app"},{"path":"../../config"}]
+  "references": [
+    { "path": "../../core" },
+    { "path": "../../app" },
+    { "path": "../../config" }
+  ]
 }

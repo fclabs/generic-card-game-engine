@@ -9,16 +9,24 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "pnpm build && pnpm -r exec tsc -p tsconfig.test.json --pretty false",
+    "lint": "pnpm build && eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "pnpm build && vitest run",
     "test:coverage": "pnpm build && vitest run --coverage",
     "test:guardrails": "pnpm build && vitest run --config vitest.guardrails.config.ts",
     "test:all": "pnpm test && pnpm test:guardrails"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/node": "22.20.5",
     "@vitest/coverage-v8": "5.0.5",
+    "eslint": "10.13.0",
     "fast-check": "4.10.2",
-    "typescript": "7.0.2",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.2",
     "vitest": "5.0.5"
   }
 }

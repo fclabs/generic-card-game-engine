@@ -59,3 +59,21 @@
 **Decision**: Root `vitest.config.ts` includes only `packages/**/*.test.ts` and `games/**/*.test.ts` (excludes `tools/guardrails/**`). Guardrail suite uses `vitest.guardrails.config.ts` selected via `vitest run --config vitest.guardrails.config.ts`. Coverage stays off unless `--coverage` (`test:coverage`).
 **Rejected**: Single config with CLI `--dir` only (easy to accidentally run the wrong include); Vitest `projects` workspace (heavier than needed for Phase 0).
 **Consequences**: Iteration 5+ adds real guardrail tests under the same config; fixtures path is already excluded there.
+
+## D-011: TypeScript pinned to 6.0.3 for typescript-eslint  (Iteration 3)
+**Context**: Iteration 1 chose TypeScript 7.0.2 (D-002), but `typescript-eslint` 8.71.2 hard-fails on TS 7 (`does not support TS 7.0`). Peer range is `>=4.8.4 <6.1.0`.
+**Decision**: Downgrade root `typescript` to exact `6.0.3` (latest in the supported range). Revises D-002.
+**Rejected**: Staying on TS 7 with non-type-aware lint only (violates FR-020); dual TS installs for side-by-side (unnecessary complexity for Phase 0).
+**Consequences**: All `tsc` / Vitest typing use 6.0.3. Revisit when typescript-eslint supports TS ≥7.1.
+
+## D-012: Type-aware ESLint project wiring (N3)  (Iteration 3)
+**Context**: Source `tsconfig.json` files exclude `*.test.ts` (FR-004); `projectService` therefore cannot type-check tests. `games/*/hooks` has no package tsconfig.
+**Decision**: `parserOptions.project` globs each package's `tsconfig.test.json` plus `tools/guardrails/tsconfig.test.json` and root `tsconfig.eslint.json` (covers `vitest*.config.ts` and `games/**/*.ts`). Plain `*.mjs`/`*.js`/`*.cjs` use `typescript-eslint`'s `disableTypeChecked` + Node `globals`. `determinismConfig` is a standalone syntactic flat-config array exported from `eslint/determinism.mjs` and spread into `eslint.config.mjs`.
+**Rejected**: `projectService: true` alone (misses tests and games hooks); making source tsconfigs include tests (breaks FR-004).
+**Consequences**: Iteration 5 guardrails import `determinismConfig` for `lintText` on virtual paths; `calculateConfigForFile` against the real config proves wiring.
+
+## D-013: Local `cge` plugin and Prettier options (N2/N4/N5/N7)  (Iteration 3)
+**Context**: Spec requires exact rule ids `cge/no-nondeterministic-globals` and `cge/no-nondeterministic-imports`; VC-001 forbids a 14th workspace member; FR-021 pins `.prettierignore`.
+**Decision**: Rules live in `eslint/cge-plugin.mjs` (plugin name `cge`); scope globs in `eslint/determinism.mjs` as `determinismFiles`. Prettier: `semi: true`, `singleQuote: false`, `trailingComma: "all"`, `printWidth: 80`, `tabWidth: 2`, `arrowParens: "always"`. `.prettierignore` is exactly the FR-021 list (Prettier still honours `.gitignore` for `node_modules` etc.).
+**Rejected**: Built-in `no-restricted-*` with message prefixes (weaker ruleId match for guardrails); `eslint/` as a workspace package.
+**Consequences**: Fixture inertness ignores already listed for ESLint and Prettier; Iteration 4–5 must keep them.
