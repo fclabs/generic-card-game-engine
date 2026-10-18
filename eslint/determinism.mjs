@@ -4,10 +4,12 @@ import cgePlugin from "./cge-plugin.mjs";
  * Globs that define the determinism scope (FR-022 / N5).
  * Test files (any path ending in .test.ts) are excluded via ignores below.
  */
+// ESLint 10 flat-config `files` globs ending in `/**` alone do not match files
+// under lintText + overrideConfigFile (N3). Suffix with `*.{ts,js,mjs}`.
 export const determinismFiles = [
-  "packages/core/**",
-  "packages/helpers/**",
-  "games/*/hooks/**",
+  "packages/core/**/*.{ts,js,mjs}",
+  "packages/helpers/**/*.{ts,js,mjs}",
+  "games/*/hooks/**/*.{ts,js,mjs}",
 ];
 
 /**

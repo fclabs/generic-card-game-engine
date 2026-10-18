@@ -8,7 +8,7 @@
 - ESLint flat config with type-aware `typescript-eslint` recommended rules, plus local `cge/*` determinism rules scoped to core/helpers/hooks.
 - Prettier configured; `pnpm lint` and `pnpm format:check` exit 0 on the skeleton.
 - **dependency-cruiser 18.6.0** enforces §7.3 layering / `core-no-node` / `no-circular` / `no-undeclared-deps`; `pnpm depcheck` exits 0.
-- Every `packages/**` package has `src/index.test.ts` (≥1 test); `packages/core` also has a `fast-check` property placeholder; `tools/guardrails/smoke.test.ts` is a temporary smoke (deleted in Iteration 5).
+- **Guardrail lint suite** (`tools/guardrails/lint-rules.test.ts` + `fixtures/lint/cases.ts`): 120 tests; `pnpm test:guardrails` wall time ≈ **0.9 s** (NFR-005 ≪ 30 s). Iteration-2 smoke test deleted.
 
 ## File map
 
@@ -26,13 +26,19 @@ tsconfig.eslint.json            # vitest configs + games/**/*.ts for type-aware 
 eslint.config.mjs               # flat config; spreads determinismConfig
 eslint/cge-plugin.mjs           # plugin name "cge"; two rules
 eslint/determinism.mjs          # determinismFiles + determinismConfig
+eslint/determinism.d.mts        # types for guardrails import of determinism.mjs
 vitest.config.ts
 vitest.guardrails.config.ts
 packages/core/                  # + property test; fast-check in devDependencies
 packages/app/
 packages/{config,helpers,conformance,server}/
 packages/adapters/{store-memory,store-sqlite,transport-http,transport-ws,authz-static,timer-host}/
-tools/guardrails/               # smoke.test.ts + tsconfigs (no src, no exports)
+tools/guardrails/
+  package.json                  # vitest + eslint exact-pinned
+  tsconfig.json / tsconfig.test.json
+  lint-helpers.ts               # ESLint instance factories (N3)
+  lint-rules.test.ts            # FR-040 / VC-022–026 / wiring
+  fixtures/lint/cases.ts        # data-driven case table (string codes only)
 games/.gitkeep
 config/.gitkeep
 deploy/.gitkeep
@@ -67,10 +73,26 @@ Each `packages/**` member: `package.json`, `tsconfig.json`, `tsconfig.test.json`
   (adapters: `packages/adapters/<dir>/` / `@cge/adapter-*`). Relative imports into
   another package's `src` or `dist` are covered via the path patterns.
 - `eslint/determinism.mjs` exports:
-  - `determinismFiles` — `packages/core/**`, `packages/helpers/**`, `games/*/hooks/**`
+  - `determinismFiles` — `packages/core/**/*.{ts,js,mjs}`, `packages/helpers/**/*.{ts,js,mjs}`,
+    `games/*/hooks/**/*.{ts,js,mjs}` (D-015; `/**` alone fails lintText override matching)
   - `determinismConfig` — flat-config array enabling both `cge/*` rules as error; ignores `**/*.test.ts`
+- Guardrail lint fixture format (`fixtures/lint/cases.ts`) (D-016):
+  - `LintCase`: `{ id, filePath, code, expect: { ruleId, name } | null }`
+  - Generated: 16 globals × 3 in-scope paths, 9 import forms × 3 paths, test exemptions, ≥5 `allow-*` cases
+- ESLint test helpers (`lint-helpers.ts`):
+  - `createDeterminismLinter()` — `overrideConfigFile: true`, `overrideConfig: [languageOptions, ...determinismConfig]`
+  - `createRepoLinter()` — real `eslint.config.mjs` for `calculateConfigForFile`
+  - `lintText` uses **repo-relative** `filePath`; wiring uses absolute paths
+- Named VC suites in `lint-rules.test.ts`:
+  - `VC-022 banned globals in packages/core/src/x.ts`
+  - `VC-023 scope and test exemption`
+  - `VC-024 banned imports in packages/core/src/x.ts`
+  - `VC-025 out-of-scope allowed`
+  - `VC-026 promises allowed (BR-005)`
+  - `determinism config wiring (N3 / VC-040)` — mutation target
 - ESLint ignores: `**/dist/**`, `**/node_modules/**`, `coverage/**`, `tools/guardrails/fixtures/**`
 - `.prettierignore` exactly: `docs/**`, `specs/**`, `pnpm-lock.yaml`, `LICENSE`, `dist/`, `coverage/`, `tools/guardrails/fixtures/**`
+- Guardrails `tsconfig.test.json` includes `./*.ts` + `fixtures/lint/cases.ts`; excludes `fixtures/depcruise/**`
 - Package names / exports / reference matrix unchanged (N8).
 
 ## Conventions & invariants
@@ -83,6 +105,7 @@ Each `packages/**` member: `package.json`, `tsconfig.json`, `tsconfig.test.json`
 - Exact `devDependencies` only (BR-007); `vitest`/`fast-check`/`@vitest/coverage-v8` identical exact versions wherever declared.
 - Runtime `dependencies` are only `workspace:*` `@cge/*` (BR-009).
 - Phase 0 sources: only `export {}`, re-exports, comments (BR-006).
+- Fixtures under `tools/guardrails/fixtures/` are inert for lint/format/build/typecheck (N7/BR-008); real `depcheck` only scans `packages games`.
 - Scratch lint checks on core that would break `pnpm build` should use `pnpm exec eslint` directly (`pnpm lint` runs build first).
 - Scratch depcheck checks: use `pnpm exec depcruise packages --config .dependency-cruiser.cjs` (skips the build step when not needed).
 
@@ -113,11 +136,13 @@ pnpm test:all
 pnpm -r list --depth -1   # expect 13 @cge/* members
 ```
 
-Pinned versions: Node `22.23.3`, pnpm `10.15.1`, TypeScript `6.0.3`, Vitest `5.0.5`, `@vitest/coverage-v8` `5.0.5`, `fast-check` `4.10.2`, `@types/node` `22.20.5`, ESLint `10.13.0`, `typescript-eslint` `8.71.2`, `@eslint/js` `10.0.1`, Prettier `3.9.10`, `globals` `17.13.0`, **dependency-cruiser `18.6.0`**.
+Pinned versions: Node `22.23.3`, pnpm `10.15.1`, TypeScript `6.0.3`, Vitest `5.0.5`, `@vitest/coverage-v8` `5.0.5`, `fast-check` `4.10.2`, `@types/node` `22.20.5`, ESLint `10.13.0`, `typescript-eslint` `8.71.2`, `@eslint/js` `10.0.1`, Prettier `3.9.10`, `globals` `17.13.0`, dependency-cruiser `18.6.0`.
 
 ## Known gaps
 
-- Guardrails fixtures and real tests (delete `smoke.test.ts`) → Iterations 5–6, 8.
+- Depcruise fixtures + `depcruise-rules.test.ts` → Iteration 6.
+- `repo-invariants.test.ts` → Iteration 8 (check 7 in Iteration 10).
 - Docker / CI / README → Iterations 7, 9, 10.
 - Dockerfile not yet present; FR-009 Dockerfile agreement deferred to Iteration 7/8.
 - `skipLibCheck: true` in `tsconfig.base.json` (from Iteration 1).
+- VC-042 depcheck half: lint fixtures present and inert; depcruise fixtures not yet (Iteration 6). Real `pnpm depcheck` already exits 0.
