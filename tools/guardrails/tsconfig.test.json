@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["./*.ts", "fixtures/lint/cases.ts"],
+  "exclude": ["fixtures/depcruise/**", "dist/**"],
+  "references": [{ "path": "./tsconfig.json" }]
+}

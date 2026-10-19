@@ -1,0 +1,23 @@
+{
+  "name": "@cge/adapter-store-memory",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@cge/core": "workspace:*",
+    "@cge/app": "workspace:*",
+    "@cge/config": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "5.0.5"
+  }
+}

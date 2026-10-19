@@ -1,0 +1,7 @@
+{
+  "name": "@cge/adapter-store-memory",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {"@cge/core":"workspace:*","@cge/app":"workspace:*","@cge/config":"workspace:*"}
+}

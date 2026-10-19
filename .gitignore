@@ -147,3 +147,7 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Fixture trees deliberately contain dist/ targets for FR-026 relative-into-dist cases
+!tools/guardrails/fixtures/**/dist/
+!tools/guardrails/fixtures/**/dist/**

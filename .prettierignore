@@ -1,0 +1,7 @@
+docs/**
+specs/**
+pnpm-lock.yaml
+LICENSE
+dist/
+coverage/
+tools/guardrails/fixtures/**

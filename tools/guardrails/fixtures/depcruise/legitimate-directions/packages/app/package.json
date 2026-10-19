@@ -1,0 +1,7 @@
+{
+  "name": "@cge/app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {"@cge/core":"workspace:*"}
+}

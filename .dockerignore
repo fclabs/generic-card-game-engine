@@ -1,0 +1,10 @@
+**/node_modules
+.git
+**/coverage
+coverage
+**/dist
+!tools/guardrails/fixtures/**/dist/
+!tools/guardrails/fixtures/**/dist/**
+*.tsbuildinfo
+**/*.tsbuildinfo
+.env*

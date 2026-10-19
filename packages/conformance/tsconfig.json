@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../app" },
+    { "path": "../config" },
+    { "path": "../helpers" },
+    { "path": "../adapters/store-memory" },
+    { "path": "../adapters/store-sqlite" },
+    { "path": "../adapters/transport-http" },
+    { "path": "../adapters/transport-ws" },
+    { "path": "../adapters/authz-static" },
+    { "path": "../adapters/timer-host" }
+  ]
+}
