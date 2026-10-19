@@ -161,3 +161,21 @@
 **Decision**: `findInvariantViolation(def, state)` walks the whole state (KBR-001, KBR-006 template/owner rule/max, KBR-007, KBR-008 incl. every seat named by control, delegations and gates, stored-counter bounds) and runs only after reducer outputs, not after primitives (their handlers keep the invariants by construction). Engine payloads must have exactly the listed fields. Order: unknown gate `MALFORMED_ACTION`, then resolved `GATE_CLOSED`, then (submit) seat not in `expectedSeats` `GATE_CLOSED` (also for a non-existent seat) or (retract) no submission `MALFORMED_ACTION`. `gate_open` with an id already open or resolved, or an invalid GateId, is `MALFORMED_ACTION`. `engine.*` always goes to the engine reducers even if a definition registered the name (structure check normally prevents it).
 **Rejected**: Running the whole-state check after every primitive (KNFR-003 cost); `GATE_CLOSED` for retract of a never-submitted seat (spec says `MALFORMED_ACTION`).
 **Consequences**: A reducer can never leave a state that fails `findInvariantViolation`; iteration 12 properties can reuse it.
+
+## D-028: Macro position semantics and unordered targets  (Iteration 10)
+**Context**: KFR-045 says an unordered `to_zone` gets no position but `draw` may carry `to_position`; zone_merge/reset_to_zone say "positions as draw".
+**Decision**: Every macro move into an ordered `to_zone` carries `base + i` (`base` = macro `to_position` for `draw`, else the working length of `to_zone` at expansion time; `reset_to_zone` continues the running index across source zones). For an unordered `to_zone` no move carries a position and a macro `to_position` is ignored. An out-of-range `to_position` fails in the generated `move` as `MALFORMED_ACTION` at the macro's input index with path `$[i].to_position`. `EMPTY_ZONE` is reported with path `$[i].count`.
+**Rejected**: Rejecting `to_position` for an unordered target (the spec only says no position is emitted); validating bounds in the expander (single source of truth is `move`).
+**Consequences**: Macro expansion is a pure read of the working state; all placement checks stay in `move`.
+
+## D-029: Macro edge-case rejections  (Iteration 10)
+**Context**: The plan fixes draw-unordered, merge src = dst and reset with `to_zone` in `zones`; unknown zones and duplicate `zones` entries are unspecified.
+**Decision**: Unknown zones, `draw` from an unordered zone, `draw`/`zone_merge` with equal zones, non-template `zone_merge` zones, `reset_to_zone` listing `to_zone` or a repeated zone are `MALFORMED_ACTION` with the offending field path (`zones[i]` for lists), checked in that order (unknown, same-zone, kind rules) and before `count`/`EMPTY_ZONE`. `draw count 0` still validates zones first. An empty `zones` list is a valid no-op.
+**Rejected**: Silently deduplicating `zones` (hides caller bugs; a repeat would otherwise fail later with a confusing `CARD_NOT_IN_ZONE`).
+**Consequences**: A malformed macro never reaches `move`.
+
+## D-030: `reset_to_zone` flips and `zone_merge` ordering  (Iteration 10)
+**Context**: KFR-047 flips "every card face-up at the start"; the plan limits it to cards the macro moved.
+**Decision**: Orientation is read from the working state at expansion time; flips (to `face_down`, in move order) are emitted only for moved cards that were `face_up`; cards already in `to_zone` are neither moved nor flipped. `zone_merge` emits moves in `src` membership order then `zone_destroy(src)`; it does not require src/dst to share a template or owner.
+**Rejected**: Flipping every face-up card of the zones including `to_zone` residents.
+**Consequences**: All primitives of a macro share the macro's input index; the committed list never contains macro kinds.

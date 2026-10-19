@@ -10,12 +10,14 @@ import type {
   GrantViewAction,
   LifecycleAction,
   MoveAction,
+  ResetToZoneMacro,
   RevokeViewAction,
   RosterAction,
   SetMetadataAction,
   ShuffleAction,
   ZoneCreateAction,
   ZoneDestroyAction,
+  ZoneMergeMacro,
 } from "./actions.js";
 import { cardId, counterId, grantId, playerId, seatId, zoneId } from "./ids.js";
 import type { JsonValue, Lifecycle, Orientation } from "./state.js";
@@ -174,6 +176,12 @@ export const A = {
       to_zone: z(to),
       ...(position !== undefined ? { to_position: position } : {}),
     };
+  },
+  zoneMerge(src: string, dst: string): ZoneMergeMacro {
+    return { kind: "zone_merge", src_zone: z(src), dst_zone: z(dst) };
+  },
+  reset(zones: readonly string[], to: string): ResetToZoneMacro {
+    return { kind: "reset_to_zone", zones: zones.map(z), to_zone: z(to) };
   },
 } as const;
 

@@ -1,23 +1,26 @@
 import { ok } from "../../errors/result.js";
 import type { Result } from "../../errors/result.js";
-import { isMacro } from "../actions.js";
 import type { Action, Macro } from "../actions.js";
 import type { ApplyContext } from "./context.js";
+import { expandDraw, expandResetToZone, expandZoneMerge } from "./macros.js";
 
 /**
- * Stage 3a: expansion hook. Primitives expand to themselves; macros expand against the
- * working state (KFR-048) in iteration 10. Until then a macro is rejected.
+ * Stage 3a: expansion. Primitives expand to themselves; a macro expands to explicit primitives
+ * against the working state as it stands now (KFR-048). `apply` applies the result before it
+ * expands the next input action. Never writes to the working state.
  */
 export function expand(
   ctx: ApplyContext,
   action: Action | Macro,
 ): Result<readonly Action[]> {
-  if (isMacro(action)) {
-    return ctx.fail(
-      "MALFORMED_ACTION",
-      `macro ${action.kind} is not yet supported`,
-      ctx.path(".kind"),
-    );
+  switch (action.kind) {
+    case "draw":
+      return expandDraw(ctx, action);
+    case "zone_merge":
+      return expandZoneMerge(ctx, action);
+    case "reset_to_zone":
+      return expandResetToZone(ctx, action);
+    default:
+      return ok([action]);
   }
-  return ok([action]);
 }

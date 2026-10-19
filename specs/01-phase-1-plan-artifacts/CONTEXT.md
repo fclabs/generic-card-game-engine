@@ -1,10 +1,10 @@
-# CONTEXT — Phase 1 domain kernel (as of Iteration 9)
+# CONTEXT — Phase 1 domain kernel (as of Iteration 10)
 
 ## Current state
-- Iterations 1-9 of 13 done: toolchain, skeleton-purity exemption (`packages/core` only), branded ids, error taxonomy, `Snapshot`/`deepFreeze`, canonical JSON profile v1 + SHA-256, `CompiledGameDefinition` types with `assertDefinitionStructure`, `definitionData` and test builders, `SessionState` types, `createSession`, `stateDigest`, `maskGates`, seeded PRNG (`createPrng`, `uniform`, `shufflePermutation`), action/macro types and `validateAction`, `ratioRound`, and `apply` with the primitives `move flip shuffle set_metadata lifecycle counter_adjust counter_transfer control_set control_advance zone_create zone_destroy grant_view revoke_view` `roster` (all six ops) and `meta` (registered reducers and the six `engine.*` actions), plus end-of-batch conservation; `nextZoneId`, `Reducer<S>`.
+- Iterations 1-10 of 13 done: toolchain, skeleton-purity exemption (`packages/core` only), branded ids, error taxonomy, `Snapshot`/`deepFreeze`, canonical JSON profile v1 + SHA-256, `CompiledGameDefinition` types with `assertDefinitionStructure`, `definitionData` and test builders, `SessionState` types, `createSession`, `stateDigest`, `maskGates`, seeded PRNG (`createPrng`, `uniform`, `shufflePermutation`), action/macro types and `validateAction`, `ratioRound`, and `apply` with the primitives `move flip shuffle set_metadata lifecycle counter_adjust counter_transfer control_set control_advance zone_create zone_destroy grant_view revoke_view` `roster` (all six ops) and `meta` (registered reducers and the six `engine.*` actions), plus end-of-batch conservation; `nextZoneId`, `Reducer<S>`. Macros `draw zone_merge reset_to_zone` expand sequentially over the working state.
 - No runtime dependencies added; `packages/core/package.json` is unchanged.
-- `apply` is live for every primitive (admission, whole-batch shape validation, copy-on-write working state, atomic commit, structural sharing). The only kinds left "not yet supported" (validated, then `MALFORMED_ACTION`) are the three macros (iteration 10).
-- Gate: `pnpm typecheck && pnpm lint && pnpm depcheck && pnpm test && pnpm test:guardrails` all green (514 tests, 35 files).
+- `apply` is live for every kind (admission, whole-batch shape validation, copy-on-write working state, sequential macro expansion, atomic commit, structural sharing). Nothing is "not yet supported" except `control_advance` `mode: until_quiescent` (out of P1).
+- Gate: `pnpm typecheck && pnpm lint && pnpm depcheck && pnpm test && pnpm test:guardrails` all green (537 tests, 36 files).
 
 ## File map (`packages/core/src`)
 | Path | Contents |
@@ -35,7 +35,8 @@
 | `session/apply/apply.ts` | orchestrator (the five stages) |
 | `session/apply/admission.ts` | stage 1: ended-session table (KBR-004/009), turn enforcement (KBR-005) |
 | `session/apply/validate-batch.ts` | stage 2: shape of every action, lifecycle-last, fresh copies |
-| `session/apply/expand.ts` | stage 3a: expansion hook (primitives identity; macros "not yet supported" until iteration 10) |
+| `session/apply/expand.ts` | stage 3a: `expand(ctx, action)` returns `Result<readonly Action[]>`: primitives identity, macros via `macros.ts` (read-only against `ctx.work`; `apply` applies each expansion before expanding the next input action) |
+| `session/apply/macros.ts`, `macros.test.ts` | `expandDraw`, `expandZoneMerge`, `expandResetToZone`; VC-004 macro cases, 024, 026, 043 literal, 046-050 and the plan-level edge cases; builders `A.zoneMerge`, `A.reset` in `actions.testing.ts` |
 | `session/ratio.ts`, `ratio.test.ts` | `ratioRound` |
 | `session/zone-ids.ts` | `ownerToken`, `ordinalKey`, `deriveZoneId` (internal) and exported `nextZoneId` |
 | `session/reducer.ts` | `Reducer<S>` type (home for the SPI re-export, iteration 11) |
@@ -147,9 +148,9 @@ Note: `.nvmrc` says 22.23.3 but only 22.18.0 is installed locally; it satisfies 
 
 ## Known gaps
 - `docs/canonical-json-profile.md` and its test (VC-066): iteration 13. SPI/ports types: 11.
-- `apply` kinds not yet implemented (validated, then "not yet supported" `MALFORMED_ACTION`): macros `draw zone_merge reset_to_zone` (10). `expand` rejects macros.
+- Macro expansion details (D-028..D-030): unordered `to_zone` ignores the macro's `to_position`; `reset_to_zone` rejects duplicate zones; `EMPTY_ZONE` carries path `$[i].count`.
 - Reducer limits (iteration 9): game reducers cannot change cards, zones, counters or control by construction (they return only their partition); the invariant re-check is defence in depth plus the roster-seat references. No engine-side defaults for roster `join`/`leave` (no counter/zone instantiation, spec out of scope). Gate quorum/timeout/nested gates are out of P1. A roster reducer's output is a detached copy, so unchanged seat entries are not `===` to the input's (the `roster` member itself is replaced).
-- VC-004 remaining cases: `[draw 2, ...]`, `EMPTY_ZONE` at index 2 (10), VC-024 `[draw count 0]` case (10). VC-043 draw case is exercised with two `move`s in front (macro-free); add the literal `[draw 2, grant, grant]` once macros land (10). VC-022/090-092 properties, VC-067 golden stream, VC-100 perf: 12.
+- VC-022/090-092 properties, VC-067 golden stream, VC-100 perf: 12.
 - No batch-length cap in P1 (plan-level decision); payload depth is capped at 64, array lengths and string sizes are not.
 - No canonical schema for actions in P1: VC-025 compares committed actions with a bigint-aware `JSON.stringify` (`actionsText`).
 - `apply` does not check that its input state is frozen (a programmer error). The SPI (iteration 11) re-exports `Reducer<S>` from `session/reducer.ts`.
