@@ -5,6 +5,8 @@ import type {
   TeamId,
   ZoneId,
 } from "../session/ids.js";
+import type { Snapshot } from "../session/snapshot.js";
+import type { SessionState } from "../session/state.js";
 
 /**
  * Compiled game definition (spec KFR-100). All members are plain data except
@@ -25,8 +27,8 @@ export type FieldSchema = Readonly<Record<string, FieldType>>;
  */
 export type PartitionReducer = (partition: never, payload: unknown) => unknown;
 
-/** Pure derived-counter evaluator `(snapshot) -> bigint` (KFR-063). Snapshot is typed in iteration 4. */
-export type DerivedEvaluator = (snapshot: never) => bigint;
+/** Pure derived-counter evaluator `(snapshot) -> bigint` (KFR-063). */
+export type DerivedEvaluator = (snapshot: Snapshot<SessionState>) => bigint;
 
 export interface CardDecl {
   readonly id: CardId;

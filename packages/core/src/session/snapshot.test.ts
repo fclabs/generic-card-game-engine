@@ -1,49 +1,36 @@
 import { describe, expect, it } from "vitest";
+import { buildDefinition } from "../definition/definition.testing.js";
+import { createSession } from "./create.js";
 import { deepFreeze } from "./snapshot.js";
 import type { Snapshot } from "./snapshot.js";
 import { isDeepFrozen } from "./snapshot.testing.js";
-import type { CardId, CounterId, SeatId, ZoneId } from "./ids.js";
+import type {
+  CardId,
+  CounterId,
+  Seq,
+  SeatId,
+  SessionId,
+  TeamId,
+  ZoneId,
+} from "./ids.js";
+import type { SessionState } from "./state.js";
+import { cloneData } from "./state.testing.js";
 
-/** Local sample shaped like spec §6.4 (iteration 4 re-points this at `SessionState`). */
-interface SampleState {
-  seq: number;
-  cards: Record<
-    CardId,
-    { zone: ZoneId; metadata: Record<string, { tags: string[] }> }
-  >;
-  zones: Record<ZoneId, { members: CardId[] }>;
-  counters: Record<CounterId, bigint>;
-  control: {
-    phase: string;
-    turnOrder: SeatId[];
-    pointers: Record<string, SeatId>;
-  };
+/** Real initial `SessionState` (iteration 4 re-points the iteration-1 sample here). */
+function initial(): Snapshot<SessionState> {
+  const r = createSession(buildDefinition(), "sess" as SessionId, [
+    { seat: "s1" as SeatId, team: "t1" as TeamId },
+    { seat: "s2" as SeatId, team: "t2" as TeamId },
+  ]);
+  if (!r.ok) throw new Error(r.error.detail);
+  return r.value;
 }
 
-function sample(): SampleState {
-  return {
-    seq: 0,
-    cards: {
-      ["c1" as CardId]: {
-        zone: "z1" as ZoneId,
-        metadata: { m: { tags: ["a", "b"] } },
-      },
-    },
-    zones: { ["z1" as ZoneId]: { members: ["c1" as CardId] } },
-    counters: { ["chips" as CounterId]: 10n },
-    control: {
-      phase: "play",
-      turnOrder: ["s1" as SeatId],
-      pointers: { dealer: "s1" as SeatId },
-    },
-  };
-}
-
-describe("VC-012 (type part) writes through Snapshot do not compile", () => {
+describe("VC-012 writes through Snapshot<SessionState> do not compile", () => {
   it("rejects writes to members[0], counters[c], control.phase", () => {
-    const snap: Snapshot<SampleState> = deepFreeze(sample());
-    const z = "z1" as ZoneId;
-    const c = "chips" as CounterId;
+    const snap = initial();
+    const z = "deck" as ZoneId;
+    const c = "pot" as CounterId;
     expect(() => {
       // @ts-expect-error members is readonly
       snap.zones[z]!.members[0] = "c2" as CardId;
@@ -56,8 +43,17 @@ describe("VC-012 (type part) writes through Snapshot do not compile", () => {
       // @ts-expect-error control.phase is readonly
       snap.control.phase = "x";
     }).toThrow(TypeError);
+    expect(() => {
+      // @ts-expect-error seq is readonly
+      snap.seq = 1 as Seq;
+    }).toThrow(TypeError);
   });
 });
+
+/** An unfrozen deep copy, for exercising `deepFreeze`. */
+function sample(): SessionState {
+  return cloneData(initial());
+}
 
 describe("VC-013 (helper part) deepFreeze / isDeepFrozen", () => {
   it("freezes a nested object/array graph and leaves bigint untouched", () => {
@@ -66,10 +62,9 @@ describe("VC-013 (helper part) deepFreeze / isDeepFrozen", () => {
     const frozen = deepFreeze(s);
     expect(frozen).toBe(s);
     expect(isDeepFrozen(frozen)).toBe(true);
-    expect(Object.isFrozen(s.cards["c1" as CardId]!.metadata.m!.tags)).toBe(
-      true,
-    );
-    expect(s.counters["chips" as CounterId]).toBe(10n);
+    expect(Object.isFrozen(s.zones["deck" as ZoneId]!.members)).toBe(true);
+    expect(s.counters["bank" as CounterId]).toBe(100n);
+    expect(s.cards["c1" as CardId]?.zone).toBe("deck");
   });
   it("isDeepFrozen detects an unfrozen nested leaf under a frozen shell", () => {
     const inner = { a: [1] };

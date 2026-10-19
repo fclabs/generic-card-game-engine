@@ -47,3 +47,27 @@
 **Decision**: All violations are `MALFORMED_ACTION` (KFR-052 names it for the reserved namespace) with a detail naming the entity and no `actionIndex`. Checks run in KFR-101 order, one full pass per item (first violation wins). "Turn order not a permutation" is split into repeated / undeclared / omitted seat. "Empty / duplicate viewKeys entry" = empty list, empty-string entry or duplicate. Derived counters in conservation groups are rejected (plan-level decision). A meta schema with an `engine.` id is rejected even when it has a reducer; the no-reducer check comes first per the spec order.
 **Rejected**: Extra checks beyond KFR-101 (duplicate template names/meta ids/group ids): scope creep, listed in Known gaps.
 **Consequences**: Iteration 4 `createSession` maps the `assertDefinitionStructure` error through unchanged.
+
+## D-009: Heterogeneous idMap values use unioned field nodes  (Iteration 4)
+**Context**: Card metadata schemas differ per card and meta partitions per schema id, yet `idMap` has a single value node and the node list is frozen (§6.2).
+**Decision**: `buildStateSchema` builds one object node per use: the union of declared field names (sorted by code unit, each `optional`); a name declared with different types becomes `json` (same bytes as string/int/bool). `cards` and `meta` stay `idMap`s (`[key, value]` pairs), as §6.2 requires. Enum-like strings (lifecycle, orientation, status) are plain `string` nodes. Delegations are an `array` in insertion order, `outcome` an optional `json` last.
+**Rejected**: Per-card/per-partition `object` nodes keyed by id (changes the frozen idMap output shape and bloats the schema to 700 entries); a new union node kind (profile is frozen).
+**Consequences**: The digest rejects only fields declared by no card/meta schema; per-card type strictness is `apply`'s job (KFR-033, iterations 6/9). Iteration 13's profile doc must describe this.
+
+## D-010: Initial-state choices not fixed by the spec  (Iteration 4)
+**Context**: KFR-010 fixes lifecycle, seq, card zones, counters, roster, control, but not card orientation, metadata or meta partitions.
+**Decision**: Cards start `face_down` with `metadata: {}`; `meta` has an empty partition `{}` for every declared meta schema (so reducers never see `undefined`); `roster.seats` copy `player`/`team` from the entries only when given (the layout's team is not back-filled); stored counters exclude derived ones; control `pointers` start empty and `direction` is `1`. Roster errors are checked per entry (undeclared seat, duplicate seat, team on teamless seat, team mismatch, duplicate player), then missing seats. `createSession` copies all arrays (never freezes the definition's).
+**Rejected**: Omitting meta partitions until first write (reducers need a partition); back-filling team from the layout (spec says roster is built from the entries).
+**Consequences**: Iterations 6-10 rely on these initial shapes; a game wanting face-up cards flips them via `setup` actions.
+
+## D-011: Digest internals and derived-counter evaluation  (Iteration 4)
+**Context**: Spec fixes `stateDigest(definition, state)`; evaluators need a typed snapshot.
+**Decision**: `DerivedEvaluator` takes `Snapshot<SessionState>` (the whole state, including `id`). `stateDigest` builds a view `{lifecycle…, derivedCounters, …}` (omitting `outcome` when absent, never emitting `undefined`) and canonicalizes it with `buildStateSchema(def)`; evaluator throw or non-bigint is a plain `Error` (cause kept), schema misfit is `CanonicalError`. `canonicalStateBytes`, `buildStateSchema` and `definitionDataSchema` stay core-internal (not in the index), keeping the VC-068 export list exact. Meta partition/derived schemas are rebuilt per call (no caching; revisit in iteration 12 performance if needed).
+**Rejected**: Exporting the schema builders (breaks VC-068 "exactly"); caching schemas in module state (hidden state).
+**Consequences**: Iteration 12 KNFR-003 measures the uncached cost at the floor.
+
+## D-012: maskGates freezes only what it creates  (Iteration 4)
+**Context**: `maskGates` runs on already-frozen snapshots and should not walk the whole state.
+**Decision**: It builds new `open` gates, `gates` and result objects and `Object.freeze`s just those; everything else is shared by reference (`===`), including `expectedSeats` of open gates and the resolved record.
+**Rejected**: `deepFreeze` of the result (needless full walk).
+**Consequences**: Callers must pass a fully frozen state (a programmer error otherwise).
