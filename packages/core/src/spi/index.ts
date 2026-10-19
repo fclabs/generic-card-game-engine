@@ -1,1 +1,27 @@
-export {};
+export type {
+  Action,
+  GateMaskedSnapshot,
+  Macro,
+  Reducer,
+  SealedBySeat,
+} from "../session/index.js";
+export type {
+  Accept,
+  AbortSignalLike,
+  Allow,
+  AuthOp,
+  AuthTarget,
+  AuthorizationHook,
+  Deny,
+  Effect,
+  GateResolveContext,
+  GateResolveHook,
+  Principal,
+  Proposal,
+  ReactionContext,
+  ReactionHook,
+  ReactionResult,
+  Reject,
+  ValidationContext,
+  ValidationHook,
+} from "./types.js";

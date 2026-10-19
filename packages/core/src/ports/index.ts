@@ -1,1 +1,20 @@
-export {};
+export type {
+  AuthorizationPort,
+  CommitResult,
+  CommittedTransaction,
+  Epoch,
+  EventId,
+  HookRunner,
+  IdempotencyLedger,
+  Lease,
+  LeasePort,
+  OutboxRow,
+  Publisher,
+  Receipt,
+  SessionStore,
+  SessionSummary,
+  StaleWriterError,
+  StoredSession,
+  TimerPort,
+  Transaction,
+} from "./types.js";

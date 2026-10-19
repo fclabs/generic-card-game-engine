@@ -179,3 +179,39 @@
 **Decision**: Orientation is read from the working state at expansion time; flips (to `face_down`, in move order) are emitted only for moved cards that were `face_up`; cards already in `to_zone` are neither moved nor flipped. `zone_merge` emits moves in `src` membership order then `zone_destroy(src)`; it does not require src/dst to share a template or owner.
 **Rejected**: Flipping every face-up card of the zones including `to_zone` residents.
 **Consequences**: All primitives of a macro share the macro's input index; the committed list never contains macro kinds.
+
+## D-031: SPI verdict, effect and proposal shapes  (Iteration 11)
+**Context**: A4 names `Accept`, `Reject`, `Allow`, `Deny`, `Effect`, `Proposal<K>` but gives no fields; KFR-090 fixes only `Effect.timer_request{id, kind, duration_hint}`.
+**Decision**: `Accept {accepted: true}`; `Reject {accepted: false; rejection: GameRejection}`; `Allow {allowed: true}`; `Deny {allowed: false; code: ErrorCode; detail?}`; `Effect = {type: 'timer_request'; id: string; kind: string; duration_hint: number}` (milliseconds, a host hint; discriminant is `type` because `kind` is taken by the timer kind); `Proposal<K extends string> {kind: K; payload: unknown}`. `Principal = string`; `AuthOp` is the KFR-112 template-literal union; `AuthTarget {sessionId; seat?}`. These live in `spi` so `AuthorizationHook` and `AuthorizationPort` share them (`ports` imports `spi`, never the reverse).
+**Rejected**: `ok`/`error` discriminants (clash with `Result`); a branded `Principal` (no id grammar in the spec); more effect kinds (spec lists only `timer_request`).
+**Consequences**: Games and adapters narrow on `accepted`/`allowed`/`type`. Adding an effect kind later is a union extension.
+
+## D-032: Hook context shapes  (Iteration 11)
+**Context**: A4 gives the `ValidationHook` ctx and the `GateResolveHook` ctx exactly, but `ReactionHook` takes an unnamed `ctx`.
+**Decision**: `ValidationContext<K> {snapshot: GateMaskedSnapshot; proposal; actor {actingSeat; onBehalfOf?}; signal: AbortSignalLike}` and `GateResolveContext {sealed; missing}` follow A4 verbatim (no `signal` in the latter; the runner receives it separately). `ReactionContext {snapshot: GateMaskedSnapshot; committed: readonly Action[]; signal}`; `ReactionResult {actions: readonly (Action|Macro)[]; effects: readonly Effect[]}`. Hook result arrays are `readonly`.
+**Rejected**: Giving reaction hooks the unmasked `SessionState` (would expose sealed submissions); adding `signal` to the gate ctx (departs from A4).
+**Consequences**: Iteration 12/phase 2 hook runners build contexts from `maskGates` output.
+
+## D-033: SPI re-exports and where the types live  (Iteration 11)
+**Context**: `Reducer<S>` (D-025), `Action`, `Macro`, `GateMaskedSnapshot`, `SealedBySeat` are defined in `session`.
+**Decision**: `spi/index.ts` re-exports them with `export type {…} from "../session/index.js"` (no redefinition); the new types are in `spi/types.ts`. The iteration-9 reducer step already used `Reducer<S>` from `session/reducer.ts`, so nothing changed there. Root `export *` of both `session` and `spi` is allowed because both names resolve to one declaration.
+**Rejected**: Moving `Action`/`Macro` into `spi` (session needs them, and `spi` would then be imported by `session`).
+**Consequences**: `spi` depends on `session`, `errors` only; the emitted `spi` JS is `export {};` per file.
+
+## D-034: Port payload types  (Iteration 11)
+**Context**: KFR-110/111 name `Transaction`, `Receipt`, `OutboxRow`, `Lease`, `CommitResult` but leave fields open; A6 gives the SQL columns.
+**Decision**: `Transaction {seq: Seq|null; eventId; principal; actions: readonly Action[]}` (the `transactions` + `actions` rows; `seq = null` is the empty accepted batch, `actions` empty). `Receipt {fingerprint; result: JsonValue|null; errorCode: ErrorCode|null; seq: Seq|null; detail: JsonValue|null; privileged: boolean}` (the `receipts` columns minus the key `(sessionId, principal, eventId)`, which `commit`, `record` and `lookup` pass separately). `OutboxRow {id; sessionId; seq: Seq|null; kind: 'commit'|'timer_request'; payload: JsonValue}`; `id` is chosen by the caller. `Lease {sessionId; epoch: number}`. `CommitResult = Result<{seq: Seq|null}, StaleWriterError>` with `StaleWriterError = EngineError & {code: 'STALE_WRITER'}`: a stale writer is a returned value, infrastructure faults reject the promise. `committed_at` and `published_at` are deliberately absent (KBR-013; adapters own operational metadata, and VC-094's static check stays trivially true).
+**Rejected**: Putting the key into `Receipt` (duplicate source of truth); `Promise<void>` plus a thrown error for `STALE_WRITER` (the spec calls it transient and typed).
+**Consequences**: An SQLite adapter maps these 1:1 to the A6 schema; `OutboxRow` drain bookkeeping is the adapter's.
+
+## D-035: `load`, `list`, `HookRunner` and `Publisher` payloads  (Iteration 11)
+**Context**: KFR-110 gives only the call shapes of `load(sessionId, atSeq?)`, `list()`, `run(hook, ctx, signal) → result`, `publish(committedTx)`.
+**Decision**: `load` resolves `StoredSession {sessionId; definitionId; definitionHash; schemaVersion; initial: Snapshot<SessionState>; seq; log: readonly Transaction[]}` or `null` for an unknown session; `initial` is the `createSession` state at seq 0 and `log` is truncated to `atSeq` (replay = `initial` + `log`). `list` resolves `readonly SessionSummary[] {sessionId; definitionId; lifecycle; seq}`. `HookRunner.run<C, R>(hook: (ctx: C) => Promise<R>, ctx: C, signal): Promise<Result<R>>`; failures are `HOOK_ERROR`/`HOOK_TIMEOUT` values. `Publisher.publish(CommittedTransaction {sessionId; transaction})`. `commit`'s `expectedSeq` is `Seq` (a stored session always exists at seq 0); there is no creation method in P1.
+**Rejected**: A `config` blob in `StoredSession` (`createSession` takes no params, spec 0.4); returning `Result` from `load` (absence is not an error).
+**Consequences**: Session creation and a `DefinitionRegistry` port are left to the adapter/application phase.
+
+## D-036: How the dist-reading tests get a build  (Iteration 11)
+**Context**: VC-081/085/095 inspect `packages/core/dist`, which is not committed.
+**Decision**: One test file, `src/dist-output.test.ts`, reads `dist/{spi,ports}` (`.js` and `.d.ts`) with `node:fs` (allowed in `*.test.ts`). `pnpm test` already runs `pnpm build` first; if dist is missing the file throws "run `pnpm build` first" at collection time (a failing, not skipped, suite). Comments are stripped before token checks because tsc keeps TSDoc in the output.
+**Rejected**: A vitest `globalSetup` that shells out to `tsc` (second build path, spawns a process from tests); skipping when dist is absent (silent pass).
+**Consequences**: Plain `pnpm exec vitest run` needs a prior `pnpm build`.
