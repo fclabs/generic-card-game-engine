@@ -1,6 +1,6 @@
 /**
- * FR-043 repository invariant checks 1–6 as pure functions over a repo root.
- * Check 7 (README / FR-070–071) is deliberately deferred to Iteration 10.
+ * FR-043 repository invariant checks 1–7 as pure functions over a repo root.
+ * Check 7 reads docs/dev-setup.md (linked from README.md).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -393,5 +393,83 @@ export function checkWorkspaceDependencies(repoRoot: string): CheckResult {
       }
     }
   }
+  return pass();
+}
+
+/** Root scripts that need not appear in docs/dev-setup.md (none today). */
+export const DOCUMENTATION_SCRIPT_ALLOWLIST: readonly string[] = [];
+
+const LAYERING_STRING = "core ← app ← adapters ← server";
+const DOCKER_TEST_CMD =
+  "docker compose -f deploy/docker-compose.test.yml run --rm tests";
+const DOCKER_UP_CMD = "docker compose -f deploy/docker-compose.yml up";
+const ADDING_PACKAGE_HEADING = /^#{1,6}\s+Adding a package\s*$/m;
+
+type RootPackageJson = PackageJson & {
+  scripts?: Record<string, string>;
+};
+
+/**
+ * FR-043 check 7 — docs/dev-setup.md (linked from README) documents every root
+ * script, both Docker commands, the layering string, and "Adding a package".
+ */
+export function checkDocumentation(repoRoot: string): CheckResult {
+  const readmePath = path.join(repoRoot, "README.md");
+  if (!fs.existsSync(readmePath)) {
+    return fail(`missing README.md`);
+  }
+  const readme = fs.readFileSync(readmePath, "utf8");
+  if (!readme.includes("docs/dev-setup.md")) {
+    return fail(`README.md: must link to docs/dev-setup.md`);
+  }
+
+  const docPath = path.join(repoRoot, "docs", "dev-setup.md");
+  if (!fs.existsSync(docPath)) {
+    return fail(`missing docs/dev-setup.md`);
+  }
+  const doc = fs.readFileSync(docPath, "utf8");
+
+  const rootPkgPath = path.join(repoRoot, "package.json");
+  if (!fs.existsSync(rootPkgPath)) {
+    return fail(`missing root package.json`);
+  }
+  const rootPkg = readJson(rootPkgPath) as RootPackageJson;
+  const scripts = Object.keys(rootPkg.scripts ?? {});
+  const required = scripts.filter(
+    (name) => !DOCUMENTATION_SCRIPT_ALLOWLIST.includes(name),
+  );
+
+  for (const name of required) {
+    const needle = "`" + name + "`";
+    if (!doc.includes(needle)) {
+      return fail(
+        `docs/dev-setup.md: missing documented script ${JSON.stringify(name)} (expected ${needle})`,
+      );
+    }
+  }
+
+  if (!doc.includes(DOCKER_TEST_CMD)) {
+    return fail(
+      `docs/dev-setup.md: missing Docker test command ${JSON.stringify(DOCKER_TEST_CMD)}`,
+    );
+  }
+  if (!doc.includes(DOCKER_UP_CMD)) {
+    return fail(
+      `docs/dev-setup.md: missing Docker up command ${JSON.stringify(DOCKER_UP_CMD)}`,
+    );
+  }
+
+  if (!doc.includes(LAYERING_STRING)) {
+    return fail(
+      `docs/dev-setup.md: missing layering string ${JSON.stringify(LAYERING_STRING)}`,
+    );
+  }
+
+  if (!ADDING_PACKAGE_HEADING.test(doc)) {
+    return fail(
+      `docs/dev-setup.md: missing markdown heading "Adding a package"`,
+    );
+  }
+
   return pass();
 }

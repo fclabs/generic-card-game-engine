@@ -278,10 +278,10 @@ hooks:
 One multi-stage `Dockerfile`; targets share the dependency layer so CI and local runs use identical bits.
 
 ```
-FROM node:22-alpine AS base      # pnpm, corepack, workspace install (cached layer)
-FROM base AS build               # tsc -b, bundle games, hook bundles hashed
-FROM build AS test               # target: runs vitest + conformance + lint + depcheck
-FROM node:22-alpine AS runtime   # non-root, prod deps only, read-only fs except /data
+FROM node:22.x.y-alpineM.m AS base   # exact Node patch + Alpine minor (not floating node:22-alpine)
+FROM base AS build                   # tsc -b, bundle games, hook bundles hashed
+FROM build AS test                   # target: runs vitest + conformance + lint + depcheck
+FROM node:22.x.y-alpineM.m AS runtime # non-root, prod deps only, read-only fs except /data
 ```
 
 ```yaml

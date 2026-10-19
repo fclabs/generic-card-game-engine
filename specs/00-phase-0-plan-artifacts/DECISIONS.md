@@ -119,3 +119,9 @@
 **Decision**: (1) Native jobs use `actions/setup-node` with `cache: pnpm`. (2) `test` and `image` use `docker/setup-buildx-action` + `docker/build-push-action` with shared `cache-from/cache-to: type=gha,scope=cge` (`mode=max`); `push: false`. (3) `test` pre-builds `--target test`, `load: true`, tag `deploy-tests:latest` (Compose’s default image name for project dir `deploy/` + service `tests`), then runs exactly `docker compose -f deploy/docker-compose.test.yml run --rm tests` so Compose reuses the loaded image. (4) Top-level stays `contents: read`; only `test`/`image` add job-level `actions: write` for GHA cache export.
 **Rejected**: Plain `docker build` without GHA cache (fails FR-063 intent); changing the compose run command with `--no-build` (breaks VC-060 exact-command match); elevating top-level permissions to include `actions: write` for all jobs.
 **Consequences**: Remote cache-hit proof (VC-063) waits for a real PR. If Compose renames default images, retag the pre-build. Iteration 10 docs should mention the CI job order and deferred remote checks.
+
+## D-021: Check 7 examines docs/dev-setup.md via README link  (Iteration 10)
+**Context**: FR-070/071 allow README *or* a linked `docs/dev-setup.md`; check 7 must be mutation-tested.
+**Decision**: Root `README.md` is a short overview that links to `docs/dev-setup.md`. `checkDocumentation` requires that link, then asserts scripts (each as `` `name` ``), both Docker commands verbatim, the layering string, and a markdown heading `Adding a package` against `docs/dev-setup.md`. `DOCUMENTATION_SCRIPT_ALLOWLIST` is empty.
+**Rejected**: Duplicating the full command table in README (drift risk); scanning README alone (plan names `docs/dev-setup.md` as the FR-070/071 surface).
+**Consequences**: Edits to onboarding/commands must update `docs/dev-setup.md`; README only needs to keep the link.

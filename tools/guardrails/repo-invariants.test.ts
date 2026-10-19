@@ -1,7 +1,5 @@
 /**
- * FR-043 repository invariants (checks 1–6).
- * Check 7 (README documents scripts / FR-070–071) is deliberately NOT
- * implemented here — Iteration 10 adds it together with the README.
+ * FR-043 repository invariants (checks 1–7).
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -10,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { repoRoot } from "./lint-helpers.js";
 import {
   checkDevDependencyVersions,
+  checkDocumentation,
   checkNodePnpmVersions,
   checkPackageMetadata,
   checkPlaceholderTests,
@@ -126,6 +125,64 @@ function seedMinimalValidRepo(root: string): void {
       null,
       2,
     ) + "\n",
+  );
+}
+
+const DOC_SCRIPTS = [
+  "build",
+  "lint",
+  "format",
+  "format:check",
+  "typecheck",
+  "depcheck",
+  "test",
+  "test:guardrails",
+  "test:all",
+  "test:coverage",
+] as const;
+
+function seedDocumentation(root: string): void {
+  const rootPkgPath = path.join(root, "package.json");
+  const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf8")) as {
+    scripts?: Record<string, string>;
+  };
+  rootPkg.scripts = Object.fromEntries(DOC_SCRIPTS.map((s) => [s, "true"]));
+  fs.writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, 2) + "\n");
+
+  writeFile(
+    root,
+    "README.md",
+    "# Engine\n\nSee [docs/dev-setup.md](docs/dev-setup.md).\n",
+  );
+
+  const scriptRows = DOC_SCRIPTS.map(
+    (s) => `| \`${s}\` | runs | exit 0 |`,
+  ).join("\n");
+  writeFile(
+    root,
+    "docs/dev-setup.md",
+    [
+      "# Developer setup",
+      "",
+      "| Script | Meaning | Result |",
+      "|--------|---------|--------|",
+      scriptRows,
+      "",
+      "```sh",
+      "docker compose -f deploy/docker-compose.test.yml run --rm tests",
+      "```",
+      "",
+      "```sh",
+      "docker compose -f deploy/docker-compose.yml up",
+      "```",
+      "",
+      "Layering: `core ← app ← adapters ← server`",
+      "",
+      "## Adding a package",
+      "",
+      "1. Create the directory.",
+      "",
+    ].join("\n"),
   );
 }
 
@@ -316,5 +373,69 @@ describe("FR-043 check 6 — workspace-only dependencies (BR-009)", () => {
     }
     expect(result.message).toContain("packages/app/package.json");
     expect(result.message).toContain("zod");
+  });
+});
+
+describe("FR-043 check 7 — documentation (scripts, Docker, layering)", () => {
+  it("passes on the real workspace skeleton", () => {
+    const result = checkDocumentation(repoRoot);
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("fails when test:guardrails is removed from docs/dev-setup.md", () => {
+    const root = mkTempRepo();
+    seedMinimalValidRepo(root);
+    seedDocumentation(root);
+    const docPath = path.join(root, "docs/dev-setup.md");
+    const doc = fs
+      .readFileSync(docPath, "utf8")
+      .replace("| `test:guardrails` | runs | exit 0 |\n", "");
+    fs.writeFileSync(docPath, doc);
+
+    const result = checkDocumentation(root);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.message).toContain("docs/dev-setup.md");
+    expect(result.message).toContain("test:guardrails");
+  });
+
+  it("fails when the layering string is removed", () => {
+    const root = mkTempRepo();
+    seedMinimalValidRepo(root);
+    seedDocumentation(root);
+    const docPath = path.join(root, "docs/dev-setup.md");
+    const doc = fs
+      .readFileSync(docPath, "utf8")
+      .replace("core ← app ← adapters ← server", "core -> app -> adapters");
+    fs.writeFileSync(docPath, doc);
+
+    const result = checkDocumentation(root);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.message).toContain("docs/dev-setup.md");
+    expect(result.message).toMatch(/layering string/);
+  });
+
+  it("fails when the Adding a package heading is removed", () => {
+    const root = mkTempRepo();
+    seedMinimalValidRepo(root);
+    seedDocumentation(root);
+    const docPath = path.join(root, "docs/dev-setup.md");
+    const doc = fs
+      .readFileSync(docPath, "utf8")
+      .replace("## Adding a package", "## Creating packages");
+    fs.writeFileSync(docPath, doc);
+
+    const result = checkDocumentation(root);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.message).toContain("docs/dev-setup.md");
+    expect(result.message).toContain("Adding a package");
   });
 });
