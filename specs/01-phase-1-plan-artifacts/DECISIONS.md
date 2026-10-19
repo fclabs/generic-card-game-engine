@@ -125,3 +125,21 @@
 **Decision**: Per group, `after == before + sum(applied of counter_adjust on members with a supply_role)`; the sign of the adjust is not checked (`mint` may decrease, `burn` may increase) in P1. `counter_transfer` is never supply. `actionIndex` = last input action with a non-zero net change on a group member (zero-delta actions do not count). Runs once, after all actions, only when something was committed.
 **Rejected**: Enforcing direction (not required by spec, plan-level decision); counting any touch (a no-op adjust is not a change).
 **Consequences**: A later phase can tighten direction without changing the pipeline hook.
+
+## D-022: `max_instances` counts live zones per template  (Iteration 8)
+**Context**: KFR-039/Req FR-191 say "a template's `max_instances`"; it is unclear whether the cap is per template or per `(template, owner)`, and whether destroyed instances count.
+**Decision**: `ZONE_LIMIT` when the number of LIVE zones whose `template` equals the template (all owners together) is already `>= maxInstances`. Destroyed zones stop counting (VC-041: after destroying ordinal 1 the next create succeeds as ordinal 3). Check order in `zone_create`: template, owner, `zone_id`, id length, collision (all `MALFORMED_ACTION`), then limit. An over-long derived id is reported at `.owner`, a collision at `.template`.
+**Rejected**: Per `(template, owner)` cap (not what "a template's" says; can be adopted later without touching ordinals); counting ordinals ever issued (contradicts VC-041).
+**Consequences**: The default fixture `hand` (seat rule, max 1) allows one hand in total. P2 compiler docs should state the cap is per template.
+
+## D-023: `nextZoneId` signature and committed index for grants  (Iteration 8)
+**Context**: KFR-049 gives `nextZoneId(state, template, owner, pending = 0)`; owner is absent for `none` templates and the id may be too long. Grant ids need the committed-list index.
+**Decision**: `nextZoneId(state, template, owner?, pending = 0): ZoneId` lives in `session/zone-ids.ts` with `deriveZoneId`/`ordinalKey`/`ownerToken`; only `nextZoneId` is exported. It validates nothing (unknown template/owner, length > 128 are left to `zone_create`). Handlers read the committed index from the existing `ctx.position` (no new API) and the committing seq from `ctx.seq`; grant id = `grant/${seq}/${position}`. `ordinalKey` is `<template>/<ownerToken>`.
+**Rejected**: `Result<ZoneId>` return (VC-050 uses the plain id inside a batch literal); a separate committed-index parameter on handlers (already in context).
+**Consequences**: Replaying a committed list as ONE batch reproduces grant ids (positions are identical); replaying it split across batches would not.
+
+## D-024: Control validation details  (Iteration 8)
+**Context**: KFR-036/037 leave pointer-name validation, duplicate active seats and an off-order cursor open.
+**Decision**: `control_set` does not check `pointer.name` against `control.pointerNames`, does not reject duplicate or empty `active_seats` (only existence), and a `control_set` with no named field is a valid no-op that logs the action. `control_advance` rejects a cursor seat that is not in `turnOrder` (`MALFORMED_ACTION`). `direction` stays a shape-level rule (enum `1|-1`). A seat "exists" when it is a key of `state.roster.seats`.
+**Rejected**: Enforcing `pointerNames` (spec names no error for it; tests use `button` while the fixture declares `dealer`); rejecting duplicate active seats (not in KBR-008).
+**Consequences**: Tighten in P2/P6 if the compiler wants pointer-name enforcement.

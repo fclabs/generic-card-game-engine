@@ -2,15 +2,22 @@ import type { Result } from "../errors/result.js";
 import type {
   Action,
   CounterAdjustAction,
+  ControlAdvanceAction,
+  ControlSetAction,
   CounterTransferAction,
   DrawMacro,
   FlipAction,
+  GrantViewAction,
   LifecycleAction,
   MoveAction,
+  RevokeViewAction,
+  RosterAction,
   SetMetadataAction,
   ShuffleAction,
+  ZoneCreateAction,
+  ZoneDestroyAction,
 } from "./actions.js";
-import { cardId, counterId, zoneId } from "./ids.js";
+import { cardId, counterId, grantId, playerId, seatId, zoneId } from "./ids.js";
 import type { JsonValue, Lifecycle, Orientation } from "./state.js";
 
 function must<T>(result: Result<T>): T {
@@ -20,6 +27,7 @@ function must<T>(result: Result<T>): T {
 const c = (v: string) => must(cardId(v));
 const z = (v: string) => must(zoneId(v));
 const k = (v: string) => must(counterId(v));
+const s_ = (v: string) => must(seatId(v));
 
 /** Test-only action builders taking plain strings (the branded ids are made here). */
 export const A = {
@@ -78,6 +86,84 @@ export const A = {
         ? { ratio: { num: opts.ratio[0], den: opts.ratio[1] } }
         : {}),
       ...(opts.remainderTo ? { remainder_to: k(opts.remainderTo) } : {}),
+    };
+  },
+  controlSet(opts: {
+    phase?: string;
+    activeSeats?: readonly string[];
+    direction?: 1 | -1;
+    pointer?: { name: string; seat: string };
+  }): ControlSetAction {
+    return {
+      kind: "control_set",
+      ...(opts.phase !== undefined ? { phase: opts.phase } : {}),
+      ...(opts.activeSeats ? { active_seats: opts.activeSeats.map(s_) } : {}),
+      ...(opts.direction !== undefined ? { direction: opts.direction } : {}),
+      ...(opts.pointer
+        ? { pointer: { name: opts.pointer.name, seat: s_(opts.pointer.seat) } }
+        : {}),
+    };
+  },
+  advance(steps: number, pointer?: string): ControlAdvanceAction {
+    return {
+      kind: "control_advance",
+      steps,
+      ...(pointer !== undefined ? { pointer } : {}),
+    };
+  },
+  zoneCreate(
+    template: string,
+    owner?: string,
+    zone?: string,
+  ): ZoneCreateAction {
+    return {
+      kind: "zone_create",
+      template,
+      ...(owner !== undefined ? { owner: s_(owner) } : {}),
+      ...(zone !== undefined ? { zone_id: z(zone) } : {}),
+    };
+  },
+  zoneDestroy(zone: string): ZoneDestroyAction {
+    return { kind: "zone_destroy", zone_id: z(zone) };
+  },
+  grant(
+    target: JsonValue,
+    keys: readonly string[],
+    grantee: string,
+    scope: JsonValue = { kind: "until_revoked" },
+  ): GrantViewAction {
+    return { kind: "grant_view", target, keys, grantee, scope };
+  },
+  revoke(grant: string): RevokeViewAction {
+    return { kind: "revoke_view", grant_id: must(grantId(grant)) };
+  },
+  delegate(
+    seat: string,
+    principal: string,
+    extra: { scope?: JsonValue; boundary?: string } = {},
+  ): RosterAction {
+    return {
+      kind: "roster",
+      op: "delegate",
+      seat_id: s_(seat),
+      grantee_principal: principal,
+      ...extra,
+    };
+  },
+  revokeDelegation(seat: string, principal: string): RosterAction {
+    return {
+      kind: "roster",
+      op: "revoke_delegation",
+      seat_id: s_(seat),
+      grantee_principal: principal,
+    };
+  },
+  substitute(seat: string, player: string): RosterAction {
+    return {
+      kind: "roster",
+      op: "substitute",
+      seat_id: s_(seat),
+      player_id: must(playerId(player)),
     };
   },
   draw(from: string, count: number, to: string, position?: number): DrawMacro {

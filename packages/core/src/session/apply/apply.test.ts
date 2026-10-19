@@ -405,16 +405,15 @@ describe("VC-027 turn enforcement", () => {
   });
 
   it("is judged on the input state: an active player changing active_seats is admitted", () => {
-    // control_set lands in iteration 8; admission must already let it through
-    const e = errorOf(
-      run(
-        start,
-        [{ kind: "control_set", active_seats: [s2] } as never],
-        player(s1),
-      ),
+    const result = must(
+      run(start, [A.controlSet({ activeSeats: ["s2"] })], player(s1)),
     );
-    expect(e.code).not.toBe("NOT_YOUR_TURN");
-    expect(e.detail).toContain("not yet supported");
+    expect(result.state.control.activeSeats).toEqual([s2]);
+    // the next batch is judged on the new state: s1 is no longer active
+    expect(
+      errorOf(run(result.state, [A.controlSet({ phase: "end" })], player(s1)))
+        .code,
+    ).toBe("NOT_YOUR_TURN");
   });
 
   it("turn admission runs before shape validation", () => {

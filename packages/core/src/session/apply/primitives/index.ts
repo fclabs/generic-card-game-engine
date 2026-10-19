@@ -2,11 +2,15 @@ import type { Result } from "../../../errors/result.js";
 import type { Action } from "../../actions.js";
 import type { ApplyContext } from "../context.js";
 import { applyCounterAdjust, applyCounterTransfer } from "./counters.js";
+import { applyControlAdvance, applyControlSet } from "./control.js";
 import { applyFlip } from "./flip.js";
+import { applyGrantView, applyRevokeView } from "./grants.js";
 import { applyLifecycle } from "./lifecycle.js";
 import { applyMove } from "./move.js";
+import { applyDelegation } from "./roster.js";
 import { applySetMetadata } from "./set-metadata.js";
 import { applyShuffle } from "./shuffle.js";
+import { applyZoneCreate, applyZoneDestroy } from "./zones.js";
 
 /**
  * Stage 3b: applies one validated primitive to the working state and returns the action to
@@ -33,12 +37,26 @@ export function applyPrimitive(
     case "counter_transfer":
       return applyCounterTransfer(ctx, action);
     case "control_set":
+      return applyControlSet(ctx, action);
     case "control_advance":
+      return applyControlAdvance(ctx, action);
     case "grant_view":
+      return applyGrantView(ctx, action);
     case "revoke_view":
+      return applyRevokeView(ctx, action);
     case "zone_create":
+      return applyZoneCreate(ctx, action);
     case "zone_destroy":
+      return applyZoneDestroy(ctx, action);
     case "roster":
+      if (action.op === "delegate" || action.op === "revoke_delegation") {
+        return applyDelegation(ctx, action);
+      }
+      return ctx.fail(
+        "MALFORMED_ACTION",
+        `roster op ${action.op} is not yet supported`,
+        ctx.path(".op"),
+      );
     case "meta":
       return ctx.fail(
         "MALFORMED_ACTION",
