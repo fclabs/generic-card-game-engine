@@ -1,0 +1,19 @@
+services:
+  engine:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: runtime
+    ports:
+      - "8080:8080"
+    volumes:
+      - engine-data:/data
+      - type: bind
+        source: ../config/server.yaml
+        target: /etc/engine/server.yaml
+        read_only: true
+    environment:
+      ENGINE_HOST_KEY: ${ENGINE_HOST_KEY:-}
+
+volumes:
+  engine-data: {}

@@ -1,0 +1,7 @@
+services:
+  tests:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: test
+    command: ["pnpm", "test:all"]

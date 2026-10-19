@@ -4,50 +4,32 @@
 
 - Node 22.23.3 + pnpm 10.15.1 workspace with exactly 13 members (6 top-level packages, 6 adapters, `@cge/guardrails`).
 - Strict TypeScript project references: `pnpm build` and `pnpm typecheck` both exit 0 (TypeScript **6.0.3**).
-- Vitest 5.0.5 root configs: unit suite over `packages/**` + `games/**`; separate guardrails config for `tools/guardrails/**`.
-- ESLint flat config with type-aware `typescript-eslint` recommended rules, plus local `cge/*` determinism rules scoped to core/helpers/hooks.
-- Prettier configured; `pnpm lint` and `pnpm format:check` exit 0 on the skeleton.
-- **dependency-cruiser 18.6.0** enforces §7.3 layering / `core-no-node` / `no-circular` / `no-undeclared-deps`; `pnpm depcheck` exits 0.
-- **Guardrail suite** (lint + depcruise): 149 tests; `pnpm test:guardrails` wall time ≈ **1.05 s** (NFR-005 ≪ 30 s).
-- FR-042 complete: lint, depcheck, build, typecheck, format:check all exit 0 with fixtures present; still 13 workspace members.
+- Vitest 5.0.5: unit suite + guardrails (149 tests); native `pnpm lint` / `typecheck` / `depcheck` / `test:all` / `format:check` all exit 0.
+- ESLint determinism rules + dependency-cruiser §7.3 layering; guardrail fixtures inert (FR-042).
+- **Docker (Iteration 7)**: multi-stage `deploy/Dockerfile` (`base` → `build` → `test`; fresh `runtime`), compose files, `.dockerignore`. Base tag `node:22.23.3-alpine3.24` matches `.nvmrc`. Runtime size ≈ base + **5.4 MB** (≪ +25 MB NFR-006).
 
 ## File map
 
 ```
 .nvmrc                          # 22.23.3
-.gitignore                      # + !tools/guardrails/fixtures/**/dist/** (FR-026 fixture)
-.prettierrc                     # semi, double quotes, trailingComma all, printWidth 80
-.prettierignore                 # exact FR-021 list
-.dependency-cruiser.cjs         # §7.3 forbidden rules + options (N6/N7)
-package.json                    # scripts: build, typecheck, lint, format*, depcheck, test*
-pnpm-workspace.yaml
-pnpm-lock.yaml
-tsconfig.base.json
-tsconfig.json                   # solution: 12 packages/** (not guardrails)
-tsconfig.eslint.json            # vitest configs + games/**/*.ts for type-aware lint
-eslint.config.mjs               # flat config; spreads determinismConfig
-eslint/cge-plugin.mjs           # plugin name "cge"; two rules
-eslint/determinism.mjs          # determinismFiles + determinismConfig
-eslint/determinism.d.mts        # types for guardrails import of determinism.mjs
-vitest.config.ts
-vitest.guardrails.config.ts
-packages/core/                  # + property test; fast-check in devDependencies
-packages/app/
-packages/{config,helpers,conformance,server}/
+.dockerignore                   # node_modules/.git/coverage/dist/tsbuildinfo/.env* (+ fixture dist !)
+.prettierrc / .prettierignore
+.dependency-cruiser.cjs
+.gitignore
+package.json / pnpm-workspace.yaml / pnpm-lock.yaml
+tsconfig.base.json / tsconfig.json / tsconfig.eslint.json
+eslint.config.mjs
+eslint/{cge-plugin,determinism}.mjs + determinism.d.mts
+vitest.config.ts / vitest.guardrails.config.ts
+packages/{core,app,config,helpers,conformance,server}/
 packages/adapters/{store-memory,store-sqlite,transport-http,transport-ws,authz-static,timer-host}/
-tools/guardrails/
-  package.json                  # vitest + eslint + dependency-cruiser exact-pinned
-  tsconfig.json / tsconfig.test.json
-  lint-helpers.ts               # ESLint instance factories (N3)
-  lint-rules.test.ts            # FR-040 / VC-022–026 / wiring
-  fixtures/lint/cases.ts        # data-driven lint case table (string codes only)
-  depcruise-helpers.ts          # cruiseFixtureCase() over real .dependency-cruiser.cjs
-  depcruise-cases.ts            # expected rule-set table (FR-041)
-  depcruise-rules.test.ts       # FR-041 / VC-027–033 / VC-041
-  fixtures/depcruise/<case>/…   # self-contained trees (21 cases)
+tools/guardrails/               # lint + depcruise guardrail suite + fixtures
 games/.gitkeep
-config/.gitkeep
-deploy/.gitkeep
+config/.gitkeep                 # no server.yaml yet (Phase 2)
+deploy/
+  Dockerfile                    # stages: base, build, test, runtime
+  docker-compose.yml            # service engine → runtime
+  docker-compose.test.yml       # service tests → test
 specs/00-phase-0.md
 specs/00-phase-0-plan.md
 specs/00-phase-0-plan-artifacts/
@@ -57,59 +39,26 @@ Each `packages/**` member: `package.json`, `tsconfig.json`, `tsconfig.test.json`
 
 ## Public interfaces
 
-- Root scripts:
-  - `build` → `tsc -b`
-  - `typecheck` → `pnpm build && pnpm -r exec tsc -p tsconfig.test.json --pretty false`
-  - `lint` → `pnpm build && eslint . --max-warnings 0`
-  - `format` → `prettier --write .`
-  - `format:check` → `prettier --check .`
-  - `depcheck` → `pnpm build && depcruise packages games --config .dependency-cruiser.cjs`
-  - `test` → `pnpm build && vitest run` (uses `vitest.config.ts`; no coverage)
-  - `test:coverage` → `pnpm build && vitest run --coverage` → writes `coverage/` (git-ignored)
-  - `test:guardrails` → `pnpm build && vitest run --config vitest.guardrails.config.ts`
-  - `test:all` → `pnpm test && pnpm test:guardrails`
+- Root scripts (unchanged): `build`, `typecheck`, `lint`, `format`, `format:check`, `depcheck`, `test`, `test:coverage`, `test:guardrails`, `test:all`
 - ESLint rule ids: `cge/no-nondeterministic-globals`, `cge/no-nondeterministic-imports`
-- dependency-cruiser rule names (all severity `error`):
-  - `layer-core-imports-nothing`, `layer-helpers-core-only`, `layer-config-core-only`,
-    `layer-app-core-only`, `layer-adapters-no-server`, `layer-adapters-no-adapters`,
-    `layer-adapters-allowed-only`, `layer-server-no-conformance`, `layer-conformance-leaf`,
-    `core-no-node`, `no-circular`, `no-undeclared-deps`
-- Matching strategy (N6): each workspace edge matches resolved path
-  `(^|/)packages/<dir>/`, `(^|/)node_modules/@cge/<name>/`, or specifier `^@cge/<name>($|/)`
-  (adapters: `packages/adapters/<dir>/` / `@cge/adapter-*`). Relative imports into
-  another package's `src` or `dist` are covered via the path patterns.
-- `eslint/determinism.mjs` exports:
-  - `determinismFiles` — `packages/core/**/*.{ts,js,mjs}`, `packages/helpers/**/*.{ts,js,mjs}`,
-    `games/*/hooks/**/*.{ts,js,mjs}` (D-015)
-  - `determinismConfig` — flat-config array enabling both `cge/*` rules as error; ignores `**/*.test.ts`
-- Guardrail lint fixture format (`fixtures/lint/cases.ts`) (D-016):
-  - `LintCase`: `{ id, filePath, code, expect: { ruleId, name } | null }`
-- Guardrail depcruise fixtures (D-017):
-  - Trees at `fixtures/depcruise/<caseId>/…` mirroring repo layout + minimal `package.json`s
-  - Expected sets in `depcruise-cases.ts` (`DepcruiseCase`: `{ id, expect, vc }`)
-  - Helper `cruiseFixtureCase(caseId)` in `depcruise-helpers.ts`: loads real
-    `.dependency-cruiser.cjs` via `extractDepcruiseConfig`, overrides `exclude` to
-    `coverage|\\.tsbuildinfo$` so fixture paths are not skipped (D-014)
-  - Multi-rule edges documented in the table (e.g. `layer-conformance-leaf` +
-    `layer-app-core-only`; `no-circular-cross` + `layer-core-imports-nothing`)
-- ESLint ignores: `**/dist/**`, `**/node_modules/**`, `coverage/**`, `tools/guardrails/fixtures/**`
-- `.prettierignore` exactly: `docs/**`, `specs/**`, `pnpm-lock.yaml`, `LICENSE`, `dist/`, `coverage/`, `tools/guardrails/fixtures/**`
-- Guardrails `tsconfig.test.json` includes `./*.ts` + `fixtures/lint/cases.ts`; excludes `fixtures/depcruise/**`
-- Package names / exports / reference matrix unchanged (N8).
+- dependency-cruiser rule names: `layer-core-imports-nothing`, `layer-helpers-core-only`, `layer-config-core-only`, `layer-app-core-only`, `layer-adapters-no-server`, `layer-adapters-no-adapters`, `layer-adapters-allowed-only`, `layer-server-no-conformance`, `layer-conformance-leaf`, `core-no-node`, `no-circular`, `no-undeclared-deps`
+- Docker image stages: `base`, `build`, `test`, `runtime`
+- Pinned base image: `node:22.23.3-alpine3.24` (pnpm via `corepack prepare pnpm@10.15.1`)
+- Compose services: `tests` (`deploy/docker-compose.test.yml`), `engine` (`deploy/docker-compose.yml`)
+- Compose volume: `engine-data` → `/data`; bind `../config/server.yaml` → `/etc/engine/server.yaml:ro`
+- Env passthrough: `ENGINE_HOST_KEY`
+- Local image tags used in checks: `cge-test:local`, `cge-build:local`, `cge-runtime:local`; compose builds `deploy-tests`
 
 ## Conventions & invariants
 
 - Intra-package imports use relative `./….js` paths (N1).
-- Tests: `*.test.ts` under `packages/**/src/` and `games/**`; guardrail tests as `tools/guardrails/*.test.ts`.
-- Determinism scope (FR-022): core, helpers, `games/*/hooks` — tests exempt (BR-004); `Promise`/`async`/`await` allowed (BR-005).
-- New package edges: add `workspace:*` deps + `tsconfig` references per N8/BR-001; layering is enforced by `.dependency-cruiser.cjs` (path|specifier patterns).
-- `eslint/` is a plain directory (not a workspace member) (N2).
-- Exact `devDependencies` only (BR-007); `vitest`/`fast-check`/`@vitest/coverage-v8`/`dependency-cruiser` identical exact versions wherever declared.
-- Runtime `dependencies` are only `workspace:*` `@cge/*` (BR-009).
+- Exact `devDependencies` only (BR-007); runtime `dependencies` only `workspace:*` `@cge/*` (BR-009).
 - Phase 0 sources: only `export {}`, re-exports, comments (BR-006).
-- Fixtures under `tools/guardrails/fixtures/` are inert for lint/format/build/typecheck/depcheck (N7/BR-008/FR-042); real `depcheck` only scans `packages games`; fixture `package.json`s are not workspace members (`tools/*` does not reach `tools/guardrails/fixtures/`).
-- Scratch lint checks on core that would break `pnpm build` should use `pnpm exec eslint` directly (`pnpm lint` runs build first).
-- Scratch depcheck checks: use `pnpm exec depcruise packages --config .dependency-cruiser.cjs` (skips the build step when not needed).
+- Fixtures under `tools/guardrails/fixtures/` are inert for lint/format/build/typecheck/depcheck (N7).
+- `.dockerignore` excludes host `**/dist` but **re-includes** `tools/guardrails/fixtures/**/dist/**` so the FR-026 relative-into-dist fixture is present in the `test` image (D-018).
+- `runtime` is a fresh `FROM` of the pinned base (not from `build`); prod install + `dist/` only; `/app` root-owned not writable by `node`; `/data` VOLUME owned by UID 1000.
+- Scripts inside Docker use POSIX `sh` only (NFR-009).
+- Scratch Docker violations must be reverted; never commit injected failures.
 
 ## Commands
 
@@ -118,7 +67,6 @@ Activate Node 22 + pnpm (macOS Homebrew, this machine):
 ```sh
 export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
 # verify: node -v → v22.23.3 ; pnpm -v → 10.15.1
-# if pnpm missing: corepack enable && corepack prepare pnpm@10.15.1 --activate
 ```
 
 From repository root:
@@ -136,13 +84,23 @@ pnpm test:coverage
 pnpm test:guardrails
 pnpm test:all
 pnpm -r list --depth -1   # expect 13 @cge/* members
+
+# Docker
+docker buildx build --check -f deploy/Dockerfile .
+docker build --target test -f deploy/Dockerfile -t cge-test:local .
+docker build --target runtime -f deploy/Dockerfile -t cge-runtime:local .
+docker compose -f deploy/docker-compose.test.yml run --rm tests
+docker compose -f deploy/docker-compose.yml config
+docker run --rm cge-runtime:local   # exits 0 (Phase 0 placeholder)
 ```
 
-Pinned versions: Node `22.23.3`, pnpm `10.15.1`, TypeScript `6.0.3`, Vitest `5.0.5`, `@vitest/coverage-v8` `5.0.5`, `fast-check` `4.10.2`, `@types/node` `22.20.5`, ESLint `10.13.0`, `typescript-eslint` `8.71.2`, `@eslint/js` `10.0.1`, Prettier `3.9.10`, `globals` `17.13.0`, dependency-cruiser `18.6.0`.
+Pinned versions: Node `22.23.3`, pnpm `10.15.1`, Alpine base `node:22.23.3-alpine3.24`, TypeScript `6.0.3`, Vitest `5.0.5`, `@vitest/coverage-v8` `5.0.5`, `fast-check` `4.10.2`, `@types/node` `22.20.5`, ESLint `10.13.0`, `typescript-eslint` `8.71.2`, `@eslint/js` `10.0.1`, Prettier `3.9.10`, `globals` `17.13.0`, dependency-cruiser `18.6.0`.
 
 ## Known gaps
 
-- `repo-invariants.test.ts` → Iteration 8 (check 7 in Iteration 10).
-- Docker / CI / README → Iterations 7, 9, 10.
-- Dockerfile not yet present; FR-009 Dockerfile agreement deferred to Iteration 7/8.
+- `repo-invariants.test.ts` (FR-043 checks 1–6) → Iteration 8 (check 7 + README in Iteration 10).
+- CI workflow → Iteration 9.
+- Human docs / README → Iteration 10.
+- `config/server.yaml` absent → `docker compose -f deploy/docker-compose.yml up` cannot start `engine` in Phase 0 (`config` validates).
+- Remote CI timings / cache hits deferred.
 - `skipLibCheck: true` in `tsconfig.base.json` (from Iteration 1).
