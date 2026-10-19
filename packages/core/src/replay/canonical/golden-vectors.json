@@ -1,0 +1,755 @@
+[
+  {
+    "name": "empty-object",
+    "description": "object with no fields",
+    "schema": {
+      "kind": "object",
+      "fields": []
+    },
+    "input": {},
+    "expectedText": "{}",
+    "expectedHex": "7b7d",
+    "expectedDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  {
+    "name": "empty-array",
+    "description": "empty array of ints",
+    "schema": {
+      "kind": "array",
+      "of": {
+        "kind": "int"
+      }
+    },
+    "input": [],
+    "expectedText": "[]",
+    "expectedHex": "5b5d",
+    "expectedDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  {
+    "name": "empty-idmap",
+    "description": "empty idMap emits an empty array of pairs",
+    "schema": {
+      "kind": "idMap",
+      "of": {
+        "kind": "int"
+      }
+    },
+    "input": {},
+    "expectedText": "[]",
+    "expectedHex": "5b5d",
+    "expectedDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  {
+    "name": "nested-arrays",
+    "description": "array of arrays keeps order and empties",
+    "schema": {
+      "kind": "array",
+      "of": {
+        "kind": "array",
+        "of": {
+          "kind": "int"
+        }
+      }
+    },
+    "input": [[1, 2], [], [3]],
+    "expectedText": "[[1,2],[],[3]]",
+    "expectedHex": "5b5b312c325d2c5b5d2c5b335d5d",
+    "expectedDigest": "14e931d6e9bcb807556683d397fcd16f0ef19136ce795ea1470aa09586db2abb"
+  },
+  {
+    "name": "bigint-zero",
+    "description": "bigint 0n is the string \"0\"",
+    "schema": {
+      "kind": "bigint"
+    },
+    "input": "0",
+    "expectedText": "\"0\"",
+    "expectedHex": "223022",
+    "expectedDigest": "98089e6d36f78e9766c9ea34d5acb3611f3a92cd81c5eb102095d924ffc7d08b"
+  },
+  {
+    "name": "bigint-minus-one",
+    "description": "bigint -1n",
+    "schema": {
+      "kind": "bigint"
+    },
+    "input": "-1",
+    "expectedText": "\"-1\"",
+    "expectedHex": "222d3122",
+    "expectedDigest": "6b54ef0f2b5a5ef8e655f3ee42f1630f4f098d1007decc5ca13855879dd63657"
+  },
+  {
+    "name": "bigint-2-pow-200",
+    "description": "bigint 2n ** 200n",
+    "schema": {
+      "kind": "bigint"
+    },
+    "input": "1606938044258990275541962092341162602522202993782792835301376",
+    "expectedText": "\"1606938044258990275541962092341162602522202993782792835301376\"",
+    "expectedHex": "223136303639333830343432353839393032373535343139363230393233343131363236303235323232303239393337383237393238333533303133373622",
+    "expectedDigest": "6dfd5979664fdf58df7523dbc99144cb967c61dfb0c9d6dbc10c4f400353419d"
+  },
+  {
+    "name": "bigint-negative-2-pow-64",
+    "description": "bigint -(2n ** 64n)",
+    "schema": {
+      "kind": "bigint"
+    },
+    "input": "-18446744073709551616",
+    "expectedText": "\"-18446744073709551616\"",
+    "expectedHex": "222d313834343637343430373337303935353136313622",
+    "expectedDigest": "2f2866addab9a74edaae0460c7cd8bf36e8ab87f084d4b755ce7045c6288e1e3"
+  },
+  {
+    "name": "int-zero",
+    "description": "int 0",
+    "schema": {
+      "kind": "int"
+    },
+    "input": 0,
+    "expectedText": "0",
+    "expectedHex": "30",
+    "expectedDigest": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+  },
+  {
+    "name": "int-max-safe",
+    "description": "int Number.MAX_SAFE_INTEGER",
+    "schema": {
+      "kind": "int"
+    },
+    "input": 9007199254740991,
+    "expectedText": "9007199254740991",
+    "expectedHex": "39303037313939323534373430393931",
+    "expectedDigest": "f40b423c2dd95ff2b2f027e22208f438cf7242862e5e746860e697308c9add26"
+  },
+  {
+    "name": "int-min-safe",
+    "description": "int Number.MIN_SAFE_INTEGER",
+    "schema": {
+      "kind": "int"
+    },
+    "input": -9007199254740991,
+    "expectedText": "-9007199254740991",
+    "expectedHex": "2d39303037313939323534373430393931",
+    "expectedDigest": "4c933a456bb8f2e9894b2d0b26480439cd72d52fb8a27cbf8fd7f323f22c7815"
+  },
+  {
+    "name": "string-empty",
+    "description": "empty string",
+    "schema": {
+      "kind": "string"
+    },
+    "input": "",
+    "expectedText": "\"\"",
+    "expectedHex": "2222",
+    "expectedDigest": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+  },
+  {
+    "name": "string-quote-backslash",
+    "description": "string a\"b\\c: quote and backslash are escaped",
+    "schema": {
+      "kind": "string"
+    },
+    "input": "a\"b\\c",
+    "expectedText": "\"a\\\"b\\\\c\"",
+    "expectedHex": "22615c22625c5c6322",
+    "expectedDigest": "29e409e74462be098277d1428e52e22cd782e73a9f50b4f4f26e6527ab583eca"
+  },
+  {
+    "name": "string-control-chars",
+    "description": "U+0000, U+0001, \\b \\t \\n, U+000B, \\f \\r, U+001F",
+    "schema": {
+      "kind": "string"
+    },
+    "input": "\u0000\u0001\b\t\n\u000b\f\r\u001f",
+    "expectedText": "\"\\u0000\\u0001\\b\\t\\n\\u000b\\f\\r\\u001f\"",
+    "expectedHex": "225c75303030305c75303030315c625c745c6e5c75303030625c665c725c753030316622",
+    "expectedDigest": "c508182c430da4d54662ad1f7943281798d87ee3575d052a0804b731c0c754d2"
+  },
+  {
+    "name": "string-del-raw",
+    "description": "U+007F is emitted raw",
+    "schema": {
+      "kind": "string"
+    },
+    "input": "",
+    "expectedText": "\"\"",
+    "expectedHex": "227f22",
+    "expectedDigest": "6fe76740e12a93d5598fe685cb6ad3d3c94e44609065a56866b69647772026ec"
+  },
+  {
+    "name": "string-line-separators-raw",
+    "description": "U+2028 and U+2029 are emitted raw",
+    "schema": {
+      "kind": "string"
+    },
+    "input": "  ",
+    "expectedText": "\"  \"",
+    "expectedHex": "22e280a8e280a922",
+    "expectedDigest": "e3a0e2262ac7790f4df36b522a8fbdd4ee3370d568eb15dc25c5f1775f14ed6c"
+  },
+  {
+    "name": "string-astral",
+    "description": "U+1F600 (surrogate pair) is emitted as 4 raw UTF-8 bytes",
+    "schema": {
+      "kind": "string"
+    },
+    "input": "😀",
+    "expectedText": "\"😀\"",
+    "expectedHex": "22f09f988022",
+    "expectedDigest": "7a0c50b92434b015545fe93ab723db2d4b2cdd14a441405624a9ce8be29f1d5a"
+  },
+  {
+    "name": "string-non-ascii",
+    "description": "Latin-1, BMP CJK, no normalisation (e + combining acute stays decomposed)",
+    "schema": {
+      "kind": "string"
+    },
+    "input": "é日本 é",
+    "expectedText": "\"é日本 é\"",
+    "expectedHex": "22c3a9e697a5e69cac2065cc8122",
+    "expectedDigest": "a23d5d5e0b257a3c3139f2b620c776a27f4aeb6e576c52bef58fbdb9fb7fafe5"
+  },
+  {
+    "name": "string-slash-raw",
+    "description": "forward slash is not escaped",
+    "schema": {
+      "kind": "string"
+    },
+    "input": "a/b",
+    "expectedText": "\"a/b\"",
+    "expectedHex": "22612f6222",
+    "expectedDigest": "f5effa31772a3689cb116700c569f4b72d765290968f099016a899ab6c1e4ee3"
+  },
+  {
+    "name": "bool-array",
+    "description": "booleans",
+    "schema": {
+      "kind": "array",
+      "of": {
+        "kind": "bool"
+      }
+    },
+    "input": [true, false],
+    "expectedText": "[true,false]",
+    "expectedHex": "5b747275652c66616c73655d",
+    "expectedDigest": "153c9dbcc7025ecd7e50ce6d83f1995233dfc636bc869098e3a8d84288fd938a"
+  },
+  {
+    "name": "null-declared",
+    "description": "null where the schema declares it",
+    "schema": {
+      "kind": "object",
+      "fields": [
+        [
+          "outcome",
+          {
+            "kind": "null"
+          }
+        ]
+      ]
+    },
+    "input": {
+      "outcome": null
+    },
+    "expectedText": "{\"outcome\":null}",
+    "expectedHex": "7b226f7574636f6d65223a6e756c6c7d",
+    "expectedDigest": "e9f883c11d172e8c690216f18ea44e236677747c465987ad95fa7c5f1257d4df"
+  },
+  {
+    "name": "schema-order-not-lexicographic",
+    "description": "keys follow schema order (z before a), not input order or sort order",
+    "schema": {
+      "kind": "object",
+      "fields": [
+        [
+          "z",
+          {
+            "kind": "int"
+          }
+        ],
+        [
+          "a",
+          {
+            "kind": "int"
+          }
+        ]
+      ]
+    },
+    "input": {
+      "z": 2,
+      "a": 1
+    },
+    "expectedText": "{\"z\":2,\"a\":1}",
+    "expectedHex": "7b227a223a322c2261223a317d",
+    "expectedDigest": "83744feac5ed0990322af80b4ad963704487ecd0625369b31cfdfda4f9c1366a"
+  },
+  {
+    "name": "optional-absent",
+    "description": "absent optional field is omitted",
+    "schema": {
+      "kind": "object",
+      "fields": [
+        [
+          "a",
+          {
+            "kind": "int"
+          }
+        ],
+        [
+          "b",
+          {
+            "kind": "optional",
+            "of": {
+              "kind": "int"
+            }
+          }
+        ]
+      ]
+    },
+    "input": {
+      "a": 1
+    },
+    "expectedText": "{\"a\":1}",
+    "expectedHex": "7b2261223a317d",
+    "expectedDigest": "015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
+  },
+  {
+    "name": "optional-present",
+    "description": "present optional field is emitted in schema position",
+    "schema": {
+      "kind": "object",
+      "fields": [
+        [
+          "a",
+          {
+            "kind": "int"
+          }
+        ],
+        [
+          "b",
+          {
+            "kind": "optional",
+            "of": {
+              "kind": "int"
+            }
+          }
+        ],
+        [
+          "c",
+          {
+            "kind": "bool"
+          }
+        ]
+      ]
+    },
+    "input": {
+      "a": 1,
+      "b": 2,
+      "c": true
+    },
+    "expectedText": "{\"a\":1,\"b\":2,\"c\":true}",
+    "expectedHex": "7b2261223a312c2262223a322c2263223a747275657d",
+    "expectedDigest": "b1bc62390ee3afb6f2b11d4088f018acd2ba100d3996bdd7490085df2269f55f"
+  },
+  {
+    "name": "idmap-case-order",
+    "description": "idMap keys differing by case: uppercase sorts before lowercase",
+    "schema": {
+      "kind": "idMap",
+      "of": {
+        "kind": "int"
+      }
+    },
+    "input": {
+      "b": 4,
+      "A": 1,
+      "a": 3,
+      "B": 2
+    },
+    "expectedText": "[[\"A\",1],[\"B\",2],[\"a\",3],[\"b\",4]]",
+    "expectedHex": "5b5b2241222c315d2c5b2242222c325d2c5b2261222c335d2c5b2262222c345d5d",
+    "expectedDigest": "6d61f05dc602d00e46fe72adeeb579dd871c5712a43a2c9521e97f0465b61a33"
+  },
+  {
+    "name": "idmap-code-unit-order",
+    "description": "U+FFFF vs U+1F600: UTF-16 code-unit order puts the astral key (D83D..) first; code-point order would not",
+    "schema": {
+      "kind": "idMap",
+      "of": {
+        "kind": "int"
+      }
+    },
+    "input": {
+      "￿": 1,
+      "😀": 2
+    },
+    "expectedText": "[[\"😀\",2],[\"￿\",1]]",
+    "expectedHex": "5b5b22f09f9880222c325d2c5b22efbfbf222c315d5d",
+    "expectedDigest": "5af1d765f4971fa001b0df56f8e3fa6c9afb3d4218525dee7d0714f22f33627e"
+  },
+  {
+    "name": "idmap-numeric-like-keys",
+    "description": "keys sort as strings: 10 < 2 < a",
+    "schema": {
+      "kind": "idMap",
+      "of": {
+        "kind": "int"
+      }
+    },
+    "input": {
+      "2": 2,
+      "10": 1,
+      "a": 3
+    },
+    "expectedText": "[[\"10\",1],[\"2\",2],[\"a\",3]]",
+    "expectedHex": "5b5b223130222c315d2c5b2232222c325d2c5b2261222c335d5d",
+    "expectedDigest": "6367d998e21046b12faf3524d805d061c1e3f56ef20a522f070eda1bb42341b9"
+  },
+  {
+    "name": "idmap-key-escaping",
+    "description": "keys use string escaping",
+    "schema": {
+      "kind": "idMap",
+      "of": {
+        "kind": "bool"
+      }
+    },
+    "input": {
+      "a\"b": true,
+      "a\\b": false
+    },
+    "expectedText": "[[\"a\\\"b\",true],[\"a\\\\b\",false]]",
+    "expectedHex": "5b5b22615c2262222c747275655d2c5b22615c5c62222c66616c73655d5d",
+    "expectedDigest": "3e16416e03c4bc8f56242331cd2a940f2ebc75035d3196ac67d1e4ff09c22300"
+  },
+  {
+    "name": "idmap-of-objects",
+    "description": "idMap of objects with bigint and array fields",
+    "schema": {
+      "kind": "idMap",
+      "of": {
+        "kind": "object",
+        "fields": [
+          [
+            "n",
+            {
+              "kind": "bigint"
+            }
+          ],
+          [
+            "tags",
+            {
+              "kind": "array",
+              "of": {
+                "kind": "string"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    "input": {
+      "c2": {
+        "n": "-5",
+        "tags": []
+      },
+      "c1": {
+        "n": "7",
+        "tags": ["x", "y"]
+      }
+    },
+    "expectedText": "[[\"c1\",{\"n\":\"7\",\"tags\":[\"x\",\"y\"]}],[\"c2\",{\"n\":\"-5\",\"tags\":[]}]]",
+    "expectedHex": "5b5b226331222c7b226e223a2237222c2274616773223a5b2278222c2279225d7d5d2c5b226332222c7b226e223a222d35222c2274616773223a5b5d7d5d5d",
+    "expectedDigest": "8df9ab9fe359e8d9a46fd68da3a3f0040830f349aef953949cdea2a9359b5ecf"
+  },
+  {
+    "name": "idmap-of-idmap",
+    "description": "nested idMaps",
+    "schema": {
+      "kind": "idMap",
+      "of": {
+        "kind": "idMap",
+        "of": {
+          "kind": "int"
+        }
+      }
+    },
+    "input": {
+      "z": {
+        "b": 1,
+        "a": 2
+      },
+      "y": {}
+    },
+    "expectedText": "[[\"y\",[]],[\"z\",[[\"a\",2],[\"b\",1]]]]",
+    "expectedHex": "5b5b2279222c5b5d5d2c5b227a222c5b5b2261222c325d2c5b2262222c315d5d5d5d",
+    "expectedDigest": "453cd501426e25ce95039172c7fdae1e9c8bd02ea16bcb5048449ae4fce06584"
+  },
+  {
+    "name": "json-unsorted-keys",
+    "description": "json node sorts object keys at every level",
+    "schema": {
+      "kind": "json"
+    },
+    "input": {
+      "b": 1,
+      "a": {
+        "d": true,
+        "c": null
+      },
+      "arr": [
+        {
+          "z": 1,
+          "y": 2
+        }
+      ]
+    },
+    "expectedText": "{\"a\":{\"c\":null,\"d\":true},\"arr\":[{\"y\":2,\"z\":1}],\"b\":1}",
+    "expectedHex": "7b2261223a7b2263223a6e756c6c2c2264223a747275657d2c22617272223a5b7b2279223a322c227a223a317d5d2c2262223a317d",
+    "expectedDigest": "e74279153ddfbe7b2ef73cb2419af8e55d86bab57cc088ecd0dbae67e9cf3c2f"
+  },
+  {
+    "name": "json-key-escaping-and-negatives",
+    "description": "json node: escaped keys, negative ints, strings with control chars",
+    "schema": {
+      "kind": "json"
+    },
+    "input": {
+      "k\n": -3,
+      "a\u0001": "t\tq\""
+    },
+    "expectedText": "{\"a\\u0001\":\"t\\tq\\\"\",\"k\\n\":-3}",
+    "expectedHex": "7b22615c7530303031223a22745c74715c22222c226b5c6e223a2d337d",
+    "expectedDigest": "158077a2934bb69efef528e3d8a627649269943a3737c120c2a3d1e83f5e3665"
+  },
+  {
+    "name": "json-primitives-array",
+    "description": "json node arrays keep order and hold every admitted primitive",
+    "schema": {
+      "kind": "json"
+    },
+    "input": [5, "x", null, false, [], {}],
+    "expectedText": "[5,\"x\",null,false,[],{}]",
+    "expectedHex": "5b352c2278222c6e756c6c2c66616c73652c5b5d2c7b7d5d",
+    "expectedDigest": "ee4aff818d7d799f125f2596ccb831d22babe0fdc44689f32ba25e59eca7eef2"
+  },
+  {
+    "name": "json-depth-64",
+    "description": "json node nested exactly 64 containers deep is admitted",
+    "schema": {
+      "kind": "json"
+    },
+    "input": [
+      [
+        [
+          [
+            [
+              [
+                [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            [
+                              [
+                                [
+                                  [
+                                    [
+                                      [
+                                        [
+                                          [
+                                            [
+                                              [
+                                                [
+                                                  [
+                                                    [
+                                                      [
+                                                        [
+                                                          [
+                                                            [
+                                                              [
+                                                                [
+                                                                  [
+                                                                    [
+                                                                      [
+                                                                        [
+                                                                          [
+                                                                            [
+                                                                              [
+                                                                                [
+                                                                                  [
+                                                                                    [
+                                                                                      [
+                                                                                        [
+                                                                                          [
+                                                                                            [
+                                                                                              [
+                                                                                                [
+                                                                                                  [
+                                                                                                    [
+                                                                                                      [
+                                                                                                        [
+                                                                                                          [
+                                                                                                            [
+                                                                                                              [
+                                                                                                                [
+                                                                                                                  [
+                                                                                                                    [
+                                                                                                                      [
+                                                                                                                        [
+                                                                                                                          [
+                                                                                                                            [
+                                                                                                                              [
+                                                                                                                                [
+                                                                                                                                  [
+                                                                                                                                    1
+                                                                                                                                  ]
+                                                                                                                                ]
+                                                                                                                              ]
+                                                                                                                            ]
+                                                                                                                          ]
+                                                                                                                        ]
+                                                                                                                      ]
+                                                                                                                    ]
+                                                                                                                  ]
+                                                                                                                ]
+                                                                                                              ]
+                                                                                                            ]
+                                                                                                          ]
+                                                                                                        ]
+                                                                                                      ]
+                                                                                                    ]
+                                                                                                  ]
+                                                                                                ]
+                                                                                              ]
+                                                                                            ]
+                                                                                          ]
+                                                                                        ]
+                                                                                      ]
+                                                                                    ]
+                                                                                  ]
+                                                                                ]
+                                                                              ]
+                                                                            ]
+                                                                          ]
+                                                                        ]
+                                                                      ]
+                                                                    ]
+                                                                  ]
+                                                                ]
+                                                              ]
+                                                            ]
+                                                          ]
+                                                        ]
+                                                      ]
+                                                    ]
+                                                  ]
+                                                ]
+                                              ]
+                                            ]
+                                          ]
+                                        ]
+                                      ]
+                                    ]
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    ],
+    "expectedText": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+    "expectedHex": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b315d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d",
+    "expectedDigest": "36127fd491fb6253bca865d070b1c735abaf9d9b4d8a225ea3392e9c36ad193a"
+  },
+  {
+    "name": "mini-state",
+    "description": "state-like object: strings, ints, idMaps, bigint counters, json meta, optional outcome",
+    "schema": {
+      "kind": "object",
+      "fields": [
+        [
+          "lifecycle",
+          {
+            "kind": "string"
+          }
+        ],
+        [
+          "seq",
+          {
+            "kind": "int"
+          }
+        ],
+        [
+          "zones",
+          {
+            "kind": "idMap",
+            "of": {
+              "kind": "array",
+              "of": {
+                "kind": "string"
+              }
+            }
+          }
+        ],
+        [
+          "counters",
+          {
+            "kind": "idMap",
+            "of": {
+              "kind": "bigint"
+            }
+          }
+        ],
+        [
+          "meta",
+          {
+            "kind": "json"
+          }
+        ],
+        [
+          "outcome",
+          {
+            "kind": "optional",
+            "of": {
+              "kind": "json"
+            }
+          }
+        ]
+      ]
+    },
+    "input": {
+      "lifecycle": "active",
+      "seq": 12,
+      "zones": {
+        "hand": ["c2", "c1"],
+        "deck": []
+      },
+      "counters": {
+        "chips": "1000",
+        "debt": "-20"
+      },
+      "meta": {
+        "round": 1,
+        "flags": {
+          "b": true,
+          "a": false
+        }
+      }
+    },
+    "expectedText": "{\"lifecycle\":\"active\",\"seq\":12,\"zones\":[[\"deck\",[]],[\"hand\",[\"c2\",\"c1\"]]],\"counters\":[[\"chips\",\"1000\"],[\"debt\",\"-20\"]],\"meta\":{\"flags\":{\"a\":false,\"b\":true},\"round\":1}}",
+    "expectedHex": "7b226c6966656379636c65223a22616374697665222c22736571223a31322c227a6f6e6573223a5b5b226465636b222c5b5d5d2c5b2268616e64222c5b226332222c226331225d5d5d2c22636f756e74657273223a5b5b226368697073222c2231303030225d2c5b2264656274222c222d3230225d5d2c226d657461223a7b22666c616773223a7b2261223a66616c73652c2262223a747275657d2c22726f756e64223a317d7d",
+    "expectedDigest": "db9d9c8db4f24c6dd4daf3425bf9fefa79e6b4beb5b5964dd240f9c9f7825740"
+  }
+]

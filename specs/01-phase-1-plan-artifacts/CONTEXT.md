@@ -1,8 +1,7 @@
-# CONTEXT — Phase 1 domain kernel (as of Iteration 1)
+# CONTEXT — Phase 1 domain kernel (as of Iteration 2)
 
 ## Current state
 - Iteration 1 of 13 done: toolchain verified, skeleton-purity guardrail exempts `packages/core` only, branded ids, error taxonomy, `Snapshot`/`deepFreeze` exist in `packages/core`.
-- All other `packages/core/src` sub-folders (`definition`, `ports`, `replay`, `spi`, `visibility`) still contain only `export {};`.
 - No runtime dependencies added; `packages/core/package.json` is unchanged.
 - Gate: `pnpm typecheck && pnpm lint && pnpm depcheck && pnpm test && pnpm test:guardrails` all green.
 
@@ -20,6 +19,13 @@
 | `session/snapshot.ts` | `DeepReadonly`, `Snapshot`, `deepFreeze` |
 | `session/snapshot.testing.ts` | `isDeepFrozen` (test-only; NOT exported from any index) |
 | `session/snapshot.test.ts` | VC-012 (type part, local sample type), VC-013 (helper part) |
+| `util/utf8.ts`, `util/utf8.test.ts` | internal `encodeUtf8` (not exported from any index) |
+| `replay/index.ts` | `export * from "./canonical/index.js"` |
+| `replay/canonical/{canonicalize,schema,sha256}.ts` | profile v1 implementation (+ `*.test.ts` beside each; `index.test.ts` = VC-068 partial) |
+| `replay/canonical/index.ts` | exports exactly `canonicalize`, `CanonicalError`, `sha256Hex`, type `CanonicalSchema` |
+| `replay/canonical/generate-golden-vectors.testing.ts` | vector sources, `buildGoldenVectors`, `encodeInput`/`reviveInput`, `toHex` (pure, test-only) |
+| `replay/canonical/golden-vectors.json`, `golden-vectors.test.ts` | 35 committed vectors; VC-060 |
+| `purity.test.ts` | VC-065 scan of non-test sources under `packages/core/src` |
 | `session/index.ts` | `export * from ids`, `deepFreeze`, `DeepReadonly`, `Snapshot` |
 Other changes: `packages/core/tsconfig.json` excludes `src/**/*.testing.ts`; `tools/guardrails/repo-invariants.ts` `checkSkeletonPurity` skips `packages/core/`.
 
@@ -28,6 +34,11 @@ Other changes: `packages/core/tsconfig.json` excludes `src/**/*.testing.ts`; `to
 - errors (`core/errors`): `ERROR_CODES` (readonly tuple of 24), `ErrorCode`, `EngineError {code; detail; actionIndex?; path?}`, `GameRejection {readonly code: string; readonly detail?: string}`, `Result<T, E = EngineError> = {ok:true;value:T}|{ok:false;error:E}`, `ok(value)`, `err(error)`.
 - snapshot (`core/session`): `DeepReadonly<T>` (primitives/bigint/functions untouched, arrays -> `readonly`, objects -> readonly mapped), `Snapshot<T> = DeepReadonly<T>`, `deepFreeze<T>(v: T): Snapshot<T>` (iterative, cycle-safe, always descends into frozen shells, freezes in place and returns the same reference).
 - Test helper: `isDeepFrozen(v: unknown): boolean` in `session/snapshot.testing.ts`.
+
+- canonical (`core/replay/canonical`, also re-exported by `core/replay` and the root): `canonicalize(schema: CanonicalSchema, value: unknown): Uint8Array` (throws `CanonicalError`), `class CanonicalError extends Error {readonly path: string}` (path syntax `$`, `.field`, `[3]`, `["idMapKey"]`), `sha256Hex(bytes): string` (lower-case, 64 chars), type `CanonicalSchema`. `stateDigest` lands in iteration 4.
+- Schema constructors live in `replay/canonical/schema.ts` and are NOT exported from the index (import them from `./schema.js` inside core): consts `intNode bigintNode stringNode boolNode nullNode jsonNode`; functions `optionalNode(of)`, `arrayNode(of)`, `idMapNode(of)`, `objectNode(fields: readonly (readonly [string, CanonicalSchema])[])`. `CanonicalSchema` is a plain JSON-serialisable tree `{kind: 'int'|'bigint'|'string'|'bool'|'null'|'json'} | {kind:'optional'|'array'|'idMap', of} | {kind:'object', fields}`. `JSON_MAX_DEPTH = 64` is exported from `canonicalize.ts` only.
+- Semantics fixed in iteration 2: `optional` only omits when the key is absent (own property); a present key holding `undefined` is an error; `null` is accepted only by `nullNode`; objects must be plain (Object.prototype or null prototype), undeclared or symbol keys are errors, missing required fields are errors; `idMap`/`json` keys sorted with default `Array.prototype.sort` (UTF-16 code units); `json` node: depth of the node's value is 1, containers deeper than 64 and cycles are errors; ints reject -0/unsafe/non-number.
+- `util/utf8.ts` (internal): `encodeUtf8(text): Result<Uint8Array, {index: number}>`; `err({index})` is the code-unit offset of a lone surrogate.
 
 ## Conventions & invariants
 - Determinism rules (no `node:*`, `Date`, `Math.random`, `performance.now`, `process.env`, `crypto`, timers, `Atomics`, `SharedArrayBuffer`; core compiles with `types: []`) apply to all non-test code under `packages/core/src`.
@@ -48,7 +59,12 @@ pnpm exec prettier --write <paths>
 ```
 Note: `.nvmrc` says 22.23.3 but only 22.18.0 is installed locally; it satisfies `>=22 <23`. Docker target (iterations 12, 13): `docker compose -f deploy/docker-compose.test.yml run --rm tests`. Shell is zsh on macOS: `sed -i` needs a suffix; use the Edit tool.
 
+## Golden vectors
+- Source of truth: `GOLDEN_SOURCES` in `generate-golden-vectors.testing.ts`; each has a hand-written `expectedText` that the generator cross-checks against `canonicalize` (and an independent UTF-8 encoding) before writing.
+- Regenerate: `UPDATE_GOLDEN=1 pnpm exec vitest run packages/core/src/replay/canonical/golden-vectors.test.ts`, then `pnpm exec prettier --write packages/core/src/replay/canonical/golden-vectors.json` and review the diff by hand. Verify: `pnpm exec vitest run packages/core/src/replay/canonical`.
+- JSON entry: `{name, description, schema, input, expectedText, expectedHex, expectedDigest}`; `input` is schema-directed encoded (bigint positions hold decimal strings; `reviveInput(schema, input)` inverts). The profile is frozen: changing any expected byte/digest means a profile change and needs a logged decision.
+
 ## Known gaps
 - `SessionState` and all §6.4 state types: iteration 4 (re-point `snapshot.test.ts` sample at `SessionState`).
-- Canonical JSON / SHA-256: iteration 2. Definition types: 3. PRNG: 5. `apply`: 6-10.
+- `stateDigest` and the state schema builder: iteration 4 (add to canonical `index.ts`, update `index.test.ts` and VC-068 to four exports). `docs/canonical-json-profile.md` and its test (VC-066): iteration 13. Definition types: 3. PRNG: 5. `apply`: 6-10.
 - `GameRejection` shape (`code` + optional `detail`) is a plan-level choice (D-001); revisit in iteration 11/12 if the SPI needs more.
