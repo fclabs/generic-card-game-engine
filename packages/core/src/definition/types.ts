@@ -5,8 +5,9 @@ import type {
   TeamId,
   ZoneId,
 } from "../session/ids.js";
+import type { Reducer } from "../session/reducer.js";
 import type { Snapshot } from "../session/snapshot.js";
-import type { SessionState } from "../session/state.js";
+import type { JsonValue, RosterState, SessionState } from "../session/state.js";
 
 /**
  * Compiled game definition (spec KFR-100). All members are plain data except
@@ -20,12 +21,6 @@ export type FieldType = "string" | "int" | "bool" | "json";
 
 /** Field name -> field type. */
 export type FieldSchema = Readonly<Record<string, FieldType>>;
-
-/**
- * Pure function over a partition. Placeholder shapes until the SPI
- * `Reducer<S>` (iteration 11) and the state types (iteration 4) exist.
- */
-export type PartitionReducer = (partition: never, payload: unknown) => unknown;
 
 /** Pure derived-counter evaluator `(snapshot) -> bigint` (KFR-063). */
 export type DerivedEvaluator = (snapshot: Snapshot<SessionState>) => bigint;
@@ -96,7 +91,7 @@ export interface MetaSchemaDecl {
   readonly id: string;
   readonly fields: FieldSchema;
   /** Required; absence is a structural violation. */
-  readonly reducer?: PartitionReducer;
+  readonly reducer?: Reducer<JsonValue>;
 }
 
 export interface PolicyDecl {
@@ -123,7 +118,7 @@ export interface CompiledGameDefinition {
   readonly viewKeys: readonly string[];
   readonly control: ControlDecl;
   readonly metaSchemas: readonly MetaSchemaDecl[];
-  readonly rosterReducer?: PartitionReducer;
+  readonly rosterReducer?: Reducer<RosterState>;
   readonly policies: PolicyDecl;
   readonly hookBindings: HookBindingTable;
 }

@@ -7,7 +7,8 @@ import { applyFlip } from "./flip.js";
 import { applyGrantView, applyRevokeView } from "./grants.js";
 import { applyLifecycle } from "./lifecycle.js";
 import { applyMove } from "./move.js";
-import { applyDelegation } from "./roster.js";
+import { applyMeta } from "./meta.js";
+import { applyDelegation, applyRosterReducer } from "./roster.js";
 import { applySetMetadata } from "./set-metadata.js";
 import { applyShuffle } from "./shuffle.js";
 import { applyZoneCreate, applyZoneDestroy } from "./zones.js";
@@ -49,19 +50,10 @@ export function applyPrimitive(
     case "zone_destroy":
       return applyZoneDestroy(ctx, action);
     case "roster":
-      if (action.op === "delegate" || action.op === "revoke_delegation") {
-        return applyDelegation(ctx, action);
-      }
-      return ctx.fail(
-        "MALFORMED_ACTION",
-        `roster op ${action.op} is not yet supported`,
-        ctx.path(".op"),
-      );
+      return action.op === "delegate" || action.op === "revoke_delegation"
+        ? applyDelegation(ctx, action)
+        : applyRosterReducer(ctx, action);
     case "meta":
-      return ctx.fail(
-        "MALFORMED_ACTION",
-        `action kind ${action.kind} is not yet supported`,
-        ctx.path(".kind"),
-      );
+      return applyMeta(ctx, action);
   }
 }

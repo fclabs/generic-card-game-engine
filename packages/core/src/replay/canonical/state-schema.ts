@@ -56,6 +56,25 @@ function unionFieldsNode(schemas: readonly FieldSchema[]): CanonicalSchema {
   );
 }
 
+/** Canonical schema of the `roster` partition (also used to validate roster reducer output). */
+export const rosterNode: CanonicalSchema = objectNode([
+  [
+    "seats",
+    idMapNode(
+      objectNode([
+        ["status", stringNode],
+        ["player", optionalNode(stringNode)],
+        ["team", optionalNode(stringNode)],
+      ]),
+    ),
+  ],
+]);
+
+/** Canonical schema of one `meta` partition: the declared fields, each optional. */
+export function metaPartitionNode(fields: FieldSchema): CanonicalSchema {
+  return unionFieldsNode([fields]);
+}
+
 const gateNode: CanonicalSchema = objectNode([
   ["schemaId", stringNode],
   ["expectedSeats", arrayNode(stringNode)],
@@ -104,21 +123,7 @@ export function buildStateSchema(
       "meta",
       idMapNode(unionFieldsNode(definition.metaSchemas.map((m) => m.fields))),
     ],
-    [
-      "roster",
-      objectNode([
-        [
-          "seats",
-          idMapNode(
-            objectNode([
-              ["status", stringNode],
-              ["player", optionalNode(stringNode)],
-              ["team", optionalNode(stringNode)],
-            ]),
-          ),
-        ],
-      ]),
-    ],
+    ["roster", rosterNode],
     [
       "control",
       objectNode([

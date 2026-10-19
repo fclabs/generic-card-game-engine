@@ -137,9 +137,7 @@ describe("VC-011 roster validation", () => {
 describe("VC-054 (create half) reserved engine.* meta schema", () => {
   it("assertDefinitionStructure and createSession both fail", () => {
     const def = buildDefinition({
-      metaSchemas: [
-        { id: "engine.custom", fields: {}, reducer: (p: unknown) => p },
-      ],
+      metaSchemas: [{ id: "engine.custom", fields: {}, reducer: (p) => p }],
     });
     const direct = assertDefinitionStructure(def);
     expect(direct.ok).toBe(false);

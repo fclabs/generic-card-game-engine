@@ -310,18 +310,15 @@ describe("VC-039 lifecycle", () => {
 });
 
 describe("unsupported kinds are rejected until their iteration", () => {
-  it("returns MALFORMED_ACTION 'not yet supported' with the input index", () => {
-    const e = errorOf(
+  it("a macro is MALFORMED_ACTION 'not yet supported' with the input index", () => {
+    const macro = errorOf(
       apply(def, start, [
         A.move("c1", "deck", "table"),
-        { kind: "meta", schema_id: "notes", payload: {} } as never,
+        A.draw("deck", 1, "table"),
       ]),
     );
-    expect(e.code).toBe("MALFORMED_ACTION");
-    expect(e.actionIndex).toBe(1);
-    expect(e.detail).toContain("not yet supported");
-    const macro = errorOf(run(start, A.draw("deck", 1, "table")));
     expect(macro.code).toBe("MALFORMED_ACTION");
+    expect(macro.actionIndex).toBe(1);
     expect(macro.detail).toContain("not yet supported");
   });
 });

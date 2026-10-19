@@ -24,6 +24,7 @@ export type {
   SessionState,
   ZoneState,
 } from "./state.js";
+export type { Reducer } from "./reducer.js";
 export { createSession } from "./create.js";
 export { maskGates } from "./mask-gates.js";
 export { ratioRound } from "./ratio.js";

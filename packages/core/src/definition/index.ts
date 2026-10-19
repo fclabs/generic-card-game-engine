@@ -11,7 +11,6 @@ export type {
   HookBindingTable,
   MetaSchemaDecl,
   OwnerRule,
-  PartitionReducer,
   PolicyDecl,
   RoundingMode,
   SeatDecl,

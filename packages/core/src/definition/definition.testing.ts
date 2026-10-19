@@ -13,7 +13,7 @@ const kid = (v: string) => must(counterId(v));
 const sid = (v: string) => must(seatId(v));
 const tid = (v: string) => must(teamId(v));
 
-const identity = (partition: unknown): unknown => partition;
+const identity = <S>(partition: S): S => partition;
 
 /**
  * A small valid definition touching every KFR-100 component: 2 seats on 2
