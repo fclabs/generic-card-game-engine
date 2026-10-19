@@ -35,3 +35,15 @@
 **Decision**: Vectors are defined in pure `generate-golden-vectors.testing.ts` with hand-written expected text; `golden-vectors.test.ts` writes the JSON when `UPDATE_GOLDEN=1` and always asserts file == generator output and bytes/digest (also against `node:crypto`).
 **Rejected**: A standalone node script (needs a TS runner); computing expectations only from the implementation (self-confirming).
 **Consequences**: Regeneration command is in CONTEXT.md; any diff to the JSON must be hand-reviewed.
+
+## D-007: Definition field names and function-valued members  (Iteration 3)
+**Context**: KFR-100 lists components in prose/snake_case; the data-vs-function rule must be usable by iteration 4's schema/digest.
+**Decision**: camelCase names (mapping in CONTEXT.md). Function-valued members are exactly `CounterDecl.derived`, `MetaSchemaDecl.reducer` and `CompiledGameDefinition.rosterReducer`. `definitionData(def)` returns the data portion with `derived`/`hasReducer`/`hasRosterReducer` booleans and no `undefined` keys (canonicalize rejects them, D-005). Reducers/derived evaluators are typed with `never` parameters (`PartitionReducer`, `DerivedEvaluator`) as placeholders; `reducer` is optional in the type so "meta schema without a reducer" is representable and checkable. Counter `owner` is the kind only (`table|player|team|zone|card`); counter `min` is required, `max` optional.
+**Rejected**: `unknown` parameters (typed functions would not be assignable under strictFunctionTypes); `any` (lint); a static zone `owner` field and a definition `id` (not in KFR-100's list; P2 can add).
+**Consequences**: Iteration 4 types the evaluator snapshot and builds the definition-data canonical schema; iteration 11 aligns reducer types with SPI `Reducer<S>`; adding fields later is a conscious change.
+
+## D-008: Interpretation of KFR-101 checks  (Iteration 3)
+**Context**: Several KFR-101 items are ambiguous or leave edge cases.
+**Decision**: All violations are `MALFORMED_ACTION` (KFR-052 names it for the reserved namespace) with a detail naming the entity and no `actionIndex`. Checks run in KFR-101 order, one full pass per item (first violation wins). "Turn order not a permutation" is split into repeated / undeclared / omitted seat. "Empty / duplicate viewKeys entry" = empty list, empty-string entry or duplicate. Derived counters in conservation groups are rejected (plan-level decision). A meta schema with an `engine.` id is rejected even when it has a reducer; the no-reducer check comes first per the spec order.
+**Rejected**: Extra checks beyond KFR-101 (duplicate template names/meta ids/group ids): scope creep, listed in Known gaps.
+**Consequences**: Iteration 4 `createSession` maps the `assertDefinitionStructure` error through unchanged.
