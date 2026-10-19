@@ -26,3 +26,5 @@ export type {
 } from "./state.js";
 export { createSession } from "./create.js";
 export { maskGates } from "./mask-gates.js";
+export { createPrng, shufflePermutation, uniform } from "./prng.js";
+export type { Prng, Uint32Stream } from "./prng.js";

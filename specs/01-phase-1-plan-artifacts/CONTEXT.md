@@ -1,7 +1,7 @@
-# CONTEXT — Phase 1 domain kernel (as of Iteration 4)
+# CONTEXT — Phase 1 domain kernel (as of Iteration 5)
 
 ## Current state
-- Iterations 1-4 of 13 done: toolchain, skeleton-purity exemption (`packages/core` only), branded ids, error taxonomy, `Snapshot`/`deepFreeze`, canonical JSON profile v1 + SHA-256, `CompiledGameDefinition` types with `assertDefinitionStructure`, `definitionData` and test builders, `SessionState` types, `createSession`, `stateDigest`, `maskGates`.
+- Iterations 1-5 of 13 done: toolchain, skeleton-purity exemption (`packages/core` only), branded ids, error taxonomy, `Snapshot`/`deepFreeze`, canonical JSON profile v1 + SHA-256, `CompiledGameDefinition` types with `assertDefinitionStructure`, `definitionData` and test builders, `SessionState` types, `createSession`, `stateDigest`, `maskGates`, seeded PRNG (`createPrng`, `uniform`, `shufflePermutation`).
 - No runtime dependencies added; `packages/core/package.json` is unchanged.
 - Gate: `pnpm typecheck && pnpm lint && pnpm depcheck && pnpm test && pnpm test:guardrails` all green.
 
@@ -23,6 +23,9 @@
 | `session/state.testing.ts` | test-only `variant(state, edit)`, `cloneData`, `Mutable<T>` |
 | `session/create.ts`, `create.test.ts` | `createSession`; VC-010, 011, 013 (initial), 014, 054 (create half) |
 | `session/mask-gates.ts`, `mask-gates.test.ts` | `maskGates`; VC-082 |
+| `session/prng.ts` | `Uint32Stream`, `Prng`, `createPrng`, `uniform`, `shufflePermutation`, `seedWords` (internal) |
+| `session/prng.testing.ts` | test-only `scriptedStream(values)` |
+| `session/generate-prng-vectors.testing.ts`, `prng-vectors.json`, `prng.test.ts` | independent vector generator (limb FNV, no bigint), 5 committed seed classes, VC-070/071 |
 | `util/utf8.ts`, `util/utf8.test.ts` | internal `encodeUtf8` (not exported from any index) |
 | `replay/index.ts` | `export * from "./canonical/index.js"` |
 | `replay/canonical/{canonicalize,schema,sha256}.ts` | profile v1 implementation (+ `*.test.ts` beside each; `index.test.ts` = VC-068 partial) |
@@ -39,7 +42,7 @@
 | `definition/definition.testing.ts` | `buildDefinition(overrides?)`, `buildFloorDefinition()` (test-only; not exported from the index) |
 | `definition/definition.test.ts` | VC-083, VC-054 (definition half), VC-089 (shape half), floor shape |
 | `definition/index.ts` | re-exports types, `assertDefinitionStructure`, `definitionData` |
-| `session/index.ts` | `export * from ids`, `deepFreeze`, `DeepReadonly`, `Snapshot`, state types, `createSession`, `maskGates` |
+| `session/index.ts` | `export * from ids`, `deepFreeze`, `DeepReadonly`, `Snapshot`, state types, `createSession`, `maskGates`, `createPrng`, `uniform`, `shufflePermutation`, types `Prng`, `Uint32Stream` |
 Other changes: `packages/core/tsconfig.json` excludes `src/**/*.testing.ts`; `tools/guardrails/repo-invariants.ts` `checkSkeletonPurity` skips `packages/core/`.
 
 ## Public interfaces
@@ -53,6 +56,7 @@ Other changes: `packages/core/tsconfig.json` excludes `src/**/*.testing.ts`; `to
 - `createSession(definition, sessionId, roster: readonly RosterEntry[]): Result<Snapshot<SessionState>>`: runs `assertDefinitionStructure` first (error passed through unchanged), then roster validation (all `MALFORMED_ACTION`, detail names the id, no `actionIndex`: undeclared seat, duplicate seat, team on teamless seat, team mismatch, duplicate player, missing declared seat, in that per-entry order then missing). Initial state: `lifecycle active`, `seq 0`, cards in starting zones in declaration order with `orientation 'face_down'` and `metadata {}`, zones `{members}` only (no template/owner), `zoneOrdinals {}`, `counters` = stored (non-derived) counters at `initial`, `meta` = `{[schemaId]: {}}` per declared meta schema, roster seats `{status:'seated', player?, team?}` copied from entries, control `{phase: initialPhase, turnOrder, activeSeats: initialActiveSeats, direction 1, pointers {}}`, `gates {open:{},resolved:{}}`, `delegations []`, `grants {}`, no `outcome` key. Everything is freshly built (never shares arrays with the definition) and deep-frozen.
 - `maskGates(snapshot: Snapshot<SessionState>): GateMaskedSnapshot`: open gates become `{schemaId, expectedSeats (same ref), submitted}` (`expectedSeats` order, seats with an own `submissions` key); resolved gates and all other members are the input's references; only the new objects are frozen.
 - Digest field order (`buildStateSchema(def)`; `id` excluded): `lifecycle, seq, cards, zones, zoneOrdinals, counters, derivedCounters, meta, roster, control, gates, delegations, grants, outcome?`. Nested: `cards` idMap of `{zone, orientation, metadata}`; `zones` idMap of `{template?, owner?, members}`; `roster {seats: idMap {status, player?, team?}}`; `control {phase, turnOrder, activeSeats, direction, pointers: idMap}`; `gates {open, resolved}` each idMap of `{schemaId, expectedSeats, submissions: idMap json}`; `delegations` array of `{seat, principal, scope?, boundary?}`; `grants` idMap of `{target json, keys, grantee, scope json}`; `outcome` optional `json`. Enums (lifecycle, orientation, status) are plain `string` nodes. `metadata` and each `meta` partition use ONE object node = union of the declared field names across all card metadata schemas / all meta schemas (names sorted, each optional; a name declared with differing types becomes `json`, byte-identical for scalars); undeclared fields are a `CanonicalError`. `derivedCounters` = idMap of derived counter id -> bigint computed on demand; an evaluator that throws or returns a non-bigint makes `stateDigest` throw a plain `Error`. See D-009, D-010.
+- PRNG (`core/session`, re-exported from root; spec §6.3): `interface Uint32Stream {readonly nextUint32: () => {readonly value: number; readonly next: Uint32Stream}}`; `type Prng = Uint32Stream` (immutable class instance, frozen; the 12 discard steps are done in `createPrng`). `createPrng(seed: string): Result<Prng>`: seed UTF-8 bytes <= 256, else/lone surrogate -> `{code:'MALFORMED_ACTION', detail}` (no `actionIndex`/`path`). `uniform(stream, n): {value, next}` throws `RangeError` unless `n` is an integer in `[1, 2**32]`; rejected draws are consumed. `shufflePermutation<T>(stream, ids: readonly T[]): {permutation: readonly T[], next}` (Fisher-Yates from `len-1` down to 1, input untouched, no draws for length 0/1). `seedWords(seed): Result<readonly number[]>` lives in `session/prng.ts` only (NOT in the index; unsigned a,b,c,d before any sfc32 step). Test helper `scriptedStream(values): {stream, consumed()}` in `session/prng.testing.ts` (throws when exhausted; `consumed()` = highest draw index reached). See D-013.
 - Test helper (`session/state.testing.ts`): `variant(state, edit: (draft: Mutable<SessionState>) => void): Snapshot<SessionState>` (clone, edit, deep-freeze), `cloneData`, `Mutable<T>`.
 - `definitionDataSchema` (`replay/canonical/definition-schema.ts`, core-internal): schema of `DefinitionData`; `canonicalize(definitionDataSchema, definitionData(def))` works for any valid definition.
 - Test helper: `isDeepFrozen(v: unknown): boolean` in `session/snapshot.testing.ts`.
@@ -96,8 +100,12 @@ Note: `.nvmrc` says 22.23.3 but only 22.18.0 is installed locally; it satisfies 
 - Regenerate: `UPDATE_GOLDEN=1 pnpm exec vitest run packages/core/src/replay/canonical/golden-vectors.test.ts`, then `pnpm exec prettier --write packages/core/src/replay/canonical/golden-vectors.json` and review the diff by hand. Verify: `pnpm exec vitest run packages/core/src/replay/canonical`.
 - JSON entry: `{name, description, schema, input, expectedText, expectedHex, expectedDigest}`; `input` is schema-directed encoded (bigint positions hold decimal strings; `reviveInput(schema, input)` inverts). The profile is frozen: changing any expected byte/digest means a profile change and needs a logged decision.
 
+## PRNG vectors
+- Regenerate: `UPDATE_GOLDEN=1 pnpm exec vitest run packages/core/src/session/prng.test.ts`, then `pnpm exec prettier --write packages/core/src/session/prng-vectors.json`; review the diff by hand. Verify: `pnpm exec vitest run packages/core/src/session/prng.test.ts`.
+- The generator is independent of `prng.ts`; `seed-a` words/values are also hard-coded in the test (from a Python reference). Entry: `{name, description, seed, seedBytes, words[4], values[10]}` (values = outputs 13..22).
+
 ## Known gaps
-- `docs/canonical-json-profile.md` and its test (VC-066): iteration 13. PRNG: 5. `apply`: 6-10 (it must deep-freeze only new objects; `stateDigest` and `maskGates` already accept any frozen state). SPI/ports types: 11.
+- `docs/canonical-json-profile.md` and its test (VC-066): iteration 13. `apply`: 6-10 (it must deep-freeze only new objects; `stateDigest` and `maskGates` already accept any frozen state). SPI/ports types: 11.
 - Definition gaps: duplicate zone-template names, duplicate meta schema ids, duplicate conservation group ids and `maxInstances` sanity are NOT checked (not in KFR-101); no definition `id`/content identity field (P2).
 - State gaps decided in iteration 4 (D-010): initial card orientation `face_down`, initial metadata `{}`, initial `meta` partitions `{}`; per-card metadata strictness is only checked by `apply` (KFR-033), the digest schema is the union of declared fields. Record keys such as `__proto__` are not guarded (valid id charset; assignment into plain records would misbehave) — revisit when `apply` builds records.
 - `GameRejection` shape (`code` + optional `detail`) is a plan-level choice (D-001); revisit in iteration 11/12 if the SPI needs more.

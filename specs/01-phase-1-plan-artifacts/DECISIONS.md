@@ -71,3 +71,9 @@
 **Decision**: It builds new `open` gates, `gates` and result objects and `Object.freeze`s just those; everything else is shared by reference (`===`), including `expectedSeats` of open gates and the resolved record.
 **Rejected**: `deepFreeze` of the result (needless full walk).
 **Consequences**: Callers must pass a fully frozen state (a programmer error otherwise).
+
+## D-013: PRNG module shape and vector generation  (Iteration 5)
+**Context**: §6.3 fixes the algorithm; the API surface, error detail and vector tooling were open (no TS runner, no new deps).
+**Decision**: `session/prng.ts` exports `Uint32Stream`, `Prng` (alias of `Uint32Stream`), `createPrng`, `uniform`, `shufflePermutation<T>` (generic over the element type, so it works with `CardId`s and plain strings); `seedWords` is exported from the module for the vectors but not from the index. `Prng` is a frozen class instance whose draws return a new instance; the 12 discarded outputs are consumed in `createPrng`. `uniform` throws `RangeError` for non-integer or out-of-range `n`. Seed errors are `MALFORMED_ACTION` with a descriptive `detail` (lone-surrogate index or byte count). Vectors: `generate-prng-vectors.testing.ts` reimplements the algorithm independently (16-bit-limb FNV, modular arithmetic, own UTF-8) and writes `prng-vectors.json` under `UPDATE_GOLDEN=1` (same pattern as D-006); values were also cross-checked once against a Python reference, and `seed-a` is hard-coded in the test.
+**Rejected**: Bigint in the generator (would share the technique with the implementation); a standalone script (no TS runner); exposing `seedWords` publicly (not in KFR-080).
+**Consequences**: Changing the algorithm changes shuffles (spec §6.3 note) and requires regenerating and re-reviewing the JSON. Iteration 6 may import `shufflePermutation` only from the proposal-side code, never from `apply` (VC-072).
