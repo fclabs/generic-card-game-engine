@@ -10,6 +10,7 @@
 
 - **Phases 0–9** deliver Part A (single-instance MVP). When Phase 9 exits, every *Must* requirement is satisfied and the system runs in Docker.
 - **Phases 10–14** deliver Part B. Each is additive: a new adapter behind a port that already exists. No domain code changes.
+- Phase 0 is complete; its as-built deviations are recorded in its section and apply to every later phase (notably: new packages must be added to the dependency matrix and `docs/dev-setup.md`, which a guardrail checks).
 - Each phase leaves the repo in a working state: it builds, tests pass and the previous behaviour is preserved. Phase 8b is the one exception to "ordered": it runs off the critical path after 8a.
 - A phase's **exit criteria** are the acceptance bar for its spec. A phase is not done until they pass inside the Docker `test` target.
 
@@ -35,23 +36,34 @@ For this graph to hold, P1 owns the Rule SPI types (including `Reducer`) and the
 
 ## Phase 0 — Foundation and tooling
 
+**Status:** Done (as built; see `specs/00-phase-0-plan-artifacts/{CONTEXT,DECISIONS}.md`).
+
 **Goal:** A buildable, testable, containerised empty workspace with the architectural rules enforced from the first commit, so no later phase can violate them.
 
-**Scope**
-- pnpm workspace, TypeScript project references, strict ESM, Node 22 LTS, package skeletons from architecture A3.
-- Vitest, `fast-check`, ESLint, Prettier.
-- `dependency-cruiser` rule: `core` ← `app` ← `adapters` ← `server`; `core` imports no `node:*`.
-- ESLint determinism rules (no `Date`, `Math.random`, timers, `process.env`, `crypto`, fs/network) for `core`, `helpers`, `games/*/hooks`.
-- Multi-stage `Dockerfile` (`base`/`build`/`test`/`runtime`), `docker-compose.yml`, `docker-compose.test.yml`.
-- CI pipeline: lint → typecheck → depcheck → containerised tests → image build.
+**Scope (as built)**
+- pnpm workspace with 13 `@cge/*` members: `core`, `app`, `config`, `helpers`, `conformance`, `server`, six adapters (`store-memory`, `store-sqlite`, `transport-http`, `transport-ws`, `authz-static`, `timer-host`) and `tools/guardrails` (`@cge/guardrails`, tooling only: no `src/`, no `exports`, not in the root solution build). `games/` is empty (`.gitkeep`) and `config/` has no `server.yaml` yet.
+- Strict ESM TypeScript project references; the full package reference and `workspace:*` dependency matrix is declared up front even though no source imports across packages. `core` sub-folders (`session`, `errors`, `spi`, `ports`, `definition`, `visibility`, `replay`) and `app` sub-folders (`session-registry`, `proposal-handler`, `publisher`, `session-factory`, `package`) live at `src/<sub>/index.ts` and are re-exported from the package `src/index.ts`. Package sources use `types: []`; only test projects (`tsconfig.test.json`) add `node` types. Intra-package imports are relative `./….js`.
+- Exact pins: Node `22.23.3` (`.nvmrc`; `engines` `>=22 <23`), pnpm `10.15.1`, TypeScript `6.0.3` (held below 7 because `typescript-eslint` does not yet support it), Vitest `5.0.5`, `fast-check` `4.10.2`, ESLint `10.13.0`, Prettier `3.9.10`, `dependency-cruiser` `18.6.0`. All `devDependencies` are exact versions; runtime `dependencies` are `workspace:*` only.
+- Vitest: unit and property placeholders per package. `pnpm test` runs `packages/**` and `games/**`; the guardrail suite runs separately (`pnpm test:guardrails`, own config); `pnpm test:all` runs both. Tests use explicit `vitest` imports (no globals).
+- ESLint (flat config, type-aware) with a local `cge` plugin (`eslint/`, not a workspace member): `cge/no-nondeterministic-globals` and `cge/no-nondeterministic-imports` scoped to `packages/core/**`, `packages/helpers/**`, `games/*/hooks/**`. Prettier with a fixed `.prettierignore`.
+- `dependency-cruiser` rules (`.dependency-cruiser.cjs`): `layer-core-imports-nothing`, `core-no-node`, `layer-helpers-core-only`, `layer-config-core-only`, `layer-app-core-only`, `layer-adapters-no-server`, `layer-adapters-no-adapters`, `layer-adapters-allowed-only`, `layer-server-no-conformance`, `layer-conformance-leaf`, `no-circular`, `no-undeclared-deps`. Layering: `core` ← `app` ← `adapters` ← `server`. There is **no** `games/**` isolation rule yet (P8a adds it).
+- Guardrail suite in `tools/guardrails` (167 tests): data-driven lint fixtures and depcruise fixture trees (inert for the real lint/format/build/typecheck/depcheck), config-wiring and mutation checks, and repo-invariant checks (FR-043 checks 1–7: package metadata, Node/pnpm pins, placeholder tests, skeleton purity, exact devDependency versions, workspace dependencies, documentation).
+- Multi-stage `deploy/Dockerfile` (`base`/`build`/`test`/`runtime`) on `node:22.23.3-alpine3.24`; `runtime` is a fresh stage (prod install, no sources/tools, read-only `/app`, `/data` volume, non-root `node`). `deploy/docker-compose.yml` (service `engine`, binds `config/server.yaml` to `/etc/engine/server.yaml:ro`) and `deploy/docker-compose.test.yml` (service `tests`).
+- GitHub Actions CI, SHA-pinned actions, frozen-lockfile installs, no image push: `lint` → `typecheck` → `depcheck` → `test` (containerised, with GHA layer cache) → `image`.
+- Human docs: `README.md` (overview), `docs/dev-setup.md` (command reference; checked by repo invariant 7), `docs/workspace-architecture.md`, `docs/troubleshooting.md`.
 
-**Deliverables:** workspace skeleton, configs, Dockerfile and compose files, CI definition, a placeholder test that runs in the `test` container.
+**Deliverables:** workspace skeleton, configs, guardrail suite, Dockerfile and compose files, CI definition, onboarding docs, placeholder tests that run in the `test` container.
 
 **Depends on:** nothing.
 
 **Exit criteria**
-- `docker compose -f deploy/docker-compose.test.yml run --rm tests` passes on a clean checkout.
-- A deliberate forbidden import (e.g. `core` → `node:fs`) fails CI; a forbidden global (`Date.now`) in `core` fails lint.
+- `docker compose -f deploy/docker-compose.test.yml run --rm tests` passes on a clean checkout (runs `test:all`, including guardrails).
+- A deliberate forbidden import (e.g. `core` → `node:fs`) fails CI; a forbidden global (`Date.now`) in `core` fails lint. Both are proven by the guardrail fixtures.
+
+**Known gaps carried forward**
+- `docker compose … up` cannot start `engine` until P2 adds `config/server.yaml`; the runtime `CMD` is a placeholder that exits 0 and there is no `/healthz`/`/readyz` until P7.
+- Remote-only CI checks await a real PR (PR-fail-at-lint, stale-lockfile, cache hits, `ubuntu-latest` timings). Branch protection is a repo-admin task.
+- `skipLibCheck: true` in `tsconfig.base.json`. TypeScript is to be revisited once `typescript-eslint` supports TS ≥ 7.
 
 ---
 
@@ -91,7 +103,7 @@ For this graph to hold, P1 owns the Rule SPI types (including `Reducer`) and the
 - Load-time invariant checks (design §2.1). Safe YAML parsing (core schema, size limit, duplicate-key error).
 - Content identity = SHA-256 of canonicalised YAML + hook bundle hash. P2 owns hook-bundle packaging and hashing (the bundle is built and hashed, not executed; execution is P4).
 - `DefinitionRegistry` port in `core/ports` (`resolve(DefinitionId) → CompiledGameDefinition`) and its filesystem adapter.
-- Server config (`server.yaml`) with `zod` validation and `${ENV}` interpolation; fail fast.
+- Server config (`server.yaml`) with `zod` validation and `${ENV}` interpolation; fail fast. Add `config/server.yaml` (the compose `engine` service already mounts it at `/etc/engine/server.yaml:ro`).
 
 **Deliverables:** `packages/core/definition`, `packages/config`, filesystem `DefinitionRegistry`, schema docs.
 
@@ -210,7 +222,7 @@ For this graph to hold, P1 owns the Rule SPI types (including `Reducer`) and the
 - A minimal fixture game (a few cards, one zone type, one hook) used only to exercise the API before P8a delivers real games.
 - Subscription filters (Q14) if kept in the MVP; otherwise record them explicitly as deferred (a *Should*, FR-107).
 - `server` composition root wiring config → adapters → app → transports.
-- `/healthz`, `/readyz`, graceful `SIGTERM` shutdown, runtime container (non-root, read-only fs except `/data`).
+- `/healthz`, `/readyz`, graceful `SIGTERM` shutdown. Replace the placeholder runtime `CMD` (`node packages/server/dist/index.js`). The runtime image is already non-root with a read-only `/app` and writable `/data`; P7 keeps that and adds a start-up check.
 
 **Deliverables:** `adapters/transport-http`, `adapters/transport-ws`, `packages/server`, runnable `docker compose up`.
 
@@ -229,6 +241,7 @@ For this graph to hold, P1 owns the Rule SPI types (including `Reducer`) and the
 **Goal:** Prove the engine is genuinely generic on the games that `docs/requirements.md` (§1.1) makes *Must*: War and a team trick-taking game (Spades-like), through one shared conformance harness.
 
 **Scope**
+- Add a dependency-cruiser rule for `games/**` (none exists after P0; `depcheck` already scans `games`) and extend the guardrail fixtures for it.
 - `packages/conformance` harness and scenario-pack format: setup, legal action, rejected action, replay, role projection.
 - `games/war` and the team trick-taking game (YAML + hooks + pack).
 - Fixed-pool vs template-zone equivalence checks (NFR-058).
