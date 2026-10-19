@@ -119,7 +119,7 @@ As-built choices not stated in the spec (from the plan's DECISIONS log):
 
 ## Known limits (still true at freeze)
 
-- Runtime dependencies are none; any later phase adding one must justify it and update FR-043 checks 5–6 (BR-009 check) as needed; Phase 1 removes the skeleton-purity check (check 4).
+- Runtime dependencies are none; any later phase adding one must justify it and update FR-043 checks 5–6 (BR-009 check) as needed; Phase 1 does not remove the skeleton-purity check (check 4) but narrows it: `packages/core` is exempt because it now holds the domain kernel, and the check stays in force for every other package (a package that gains code needs a deliberate guardrail change).
 - `config/server.yaml` does not exist, so `docker compose … up` cannot start `engine`; the runtime CMD is a placeholder exiting 0; no `/healthz`/`/readyz`.
 - Supported platforms: macOS and Linux only; Docker scripts use POSIX `sh` (Alpine/busybox).
 - Source projects use `types: []`; packages needing Node APIs (server, adapters) must enable them explicitly.
