@@ -1,10 +1,10 @@
-# CONTEXT — Phase 1 domain kernel (as of Iteration 11)
+# CONTEXT — Phase 1 domain kernel (as of Iteration 12)
 
 ## Current state
-- Iterations 1-11 of 13 done: toolchain, skeleton-purity exemption (`packages/core` only), branded ids, error taxonomy, `Snapshot`/`deepFreeze`, canonical JSON profile v1 + SHA-256, `CompiledGameDefinition` types with `assertDefinitionStructure`, `definitionData` and test builders, `SessionState` types, `createSession`, `stateDigest`, `maskGates`, seeded PRNG (`createPrng`, `uniform`, `shufflePermutation`), action/macro types and `validateAction`, `ratioRound`, and `apply` with the primitives `move flip shuffle set_metadata lifecycle counter_adjust counter_transfer control_set control_advance zone_create zone_destroy grant_view revoke_view` `roster` (all six ops) and `meta` (registered reducers and the six `engine.*` actions), plus end-of-batch conservation; `nextZoneId`, `Reducer<S>`. Macros `draw zone_merge reset_to_zone` expand sequentially over the working state. `core/spi` and `core/ports` are delivered as types-only modules (no runtime exports).
-- No runtime dependencies added; `packages/core/package.json` is unchanged.
-- `apply` is live for every kind (admission, whole-batch shape validation, copy-on-write working state, sequential macro expansion, atomic commit, structural sharing). Nothing is "not yet supported" except `control_advance` `mode: until_quiescent` (out of P1).
-- Gate: `pnpm typecheck && pnpm lint && pnpm depcheck && pnpm test && pnpm test:guardrails` all green (560 tests, 39 files).
+- The kernel is functionally complete and proven; only documentation (iteration 13) remains. Iterations 1-12 of 13 done: toolchain, skeleton-purity exemption (`packages/core` only), branded ids, error taxonomy, `Snapshot`/`deepFreeze`, canonical JSON profile v1 + pure-TS SHA-256, `CompiledGameDefinition` types with `assertDefinitionStructure`/`definitionData`, `SessionState`, `createSession`, `stateDigest`, `maskGates`, seeded PRNG, action/macro types and `validateAction`, `ratioRound`, `nextZoneId`, and `apply` live for every primitive (`move flip shuffle set_metadata lifecycle counter_adjust counter_transfer control_set control_advance zone_create zone_destroy grant_view revoke_view`, `roster` all six ops, `meta` with registered reducers and the six `engine.*` actions), macros (`draw zone_merge reset_to_zone`) with sequential expansion, end-of-batch conservation, atomic commit, structural sharing. `core/spi` and `core/ports` are types-only.
+- Proven in iteration 12: atomicity (VC-022/090), card/zone membership (VC-091) and replay equivalence (VC-092) as 1 000-run fast-check properties over a tape-driven generator covering every primitive, macro and `engine.*` action incl. illegal variants; a committed 30-batch golden stream (VC-067); floor-size smoke (VC-084/100, medians ~0.3 ms apply and ~1.5 ms digest, far below 50/250 ms); static checks VC-094 and VC-105; one failing-path test per KBR; coverage session 99.3 % and replay/canonical 99.0 % lines.
+- No runtime dependencies added; `packages/core/package.json` is unchanged. No schema cache was needed (D-037).
+- Gate: `pnpm typecheck && pnpm lint && pnpm depcheck && pnpm test && pnpm test:guardrails` all green (595 tests, 45 files; guardrails 168); Docker `test` target green.
 
 ## File map (`packages/core/src`)
 | Path | Contents |
@@ -74,6 +74,13 @@
 | `definition/definition.test.ts` | VC-083, VC-054 (definition half), VC-089 (shape half), floor shape |
 | `definition/index.ts` | re-exports types, `assertDefinitionStructure`, `definitionData` |
 | `session/index.ts` | `export * from ids`, actions types, `validateAction`, `apply` (+ `ApplyOptions ApplySuccess ProposalDescriptor`), `deepFreeze`, `DeepReadonly`, `Snapshot`, state types, `createSession`, `maskGates`, `ratioRound`, `nextZoneId`, `createPrng`, `uniform`, `shufflePermutation`, types `Prng`, `Uint32Stream` |
+| `session/generators.testing.ts` | fast-check/property support (iteration 12): `Tape`, `tapeArbitrary`, `buildPropertyDefinition()`, `propertyRoster()`, `propertyStart(def?)`, `generateAction(def, state, tape, bad)`, `generateBatch(def, state, tape, {illegalPercent?, maxLength?})`, `generateStream(def, start, tape, batches, options?)` -> `GeneratedStep {before, batch, opts, result}`, `GENERATED_KINDS` |
+| `session/properties.test.ts` | VC-022/090 atomicity, VC-091, VC-092, fixed-seed coverage of kinds and error codes (1 000 runs x 6 batches each) |
+| `session/golden-stream.testing.ts`, `golden-stream.json`, `golden-stream.test.ts` | VC-067: `GOLDEN_STEPS` (30 batches), `goldenDefinition()`, `goldenRoster()`; expected digests at seq 0/10/20/30; hand-computed intermediate assertions; second-run and replay checks |
+| `session/floor-performance.test.ts` | VC-084, VC-100, KNFR-004 at the 14-seat/700-card/64-zone floor; strict thresholds under Docker (`/.dockerenv`) or `CGE_PERF_STRICT=1`, 10x ceiling elsewhere |
+| `session/apply/kbr.test.ts` | failing-path tests named `KBR-001..005, 009, 011` (incl. reducer/cast corruption of membership) |
+| `no-timestamps.test.ts` | VC-094: interface-field scan of `SessionState`/`ApplySuccess`/`ApplyOptions`/port payloads, temp-dir fixtures that must fail, `Effect` never read |
+| `guardrail-fixtures.test.ts` | VC-105: temp-dir fixtures with `node:fs` imports and `Date.now()` linted under a virtual `packages/core/src/session/` path with the real `determinismConfig`; real session sources are clean |
 Other changes: `packages/core/tsconfig.json` excludes `src/**/*.testing.ts`; `tools/guardrails/repo-invariants.ts` `checkSkeletonPurity` skips `packages/core/`.
 
 ## Public interfaces
@@ -144,6 +151,8 @@ pnpm typecheck | pnpm lint | pnpm depcheck | pnpm test | pnpm test:guardrails | 
 pnpm exec vitest run <path>      # single test file
 pnpm exec prettier --write <paths>
 ```
+Performance strictness: `floor-performance.test.ts` enforces the spec thresholds (50 ms apply, 250 ms digest) when `/.dockerenv` exists (the Docker `test` target) or `CGE_PERF_STRICT=1`; otherwise a 10x ceiling. Force strict locally: `CGE_PERF_STRICT=1 pnpm exec vitest run packages/core/src/session/floor-performance.test.ts`.
+Golden stream: regenerate digests with `UPDATE_GOLDEN=1 pnpm exec vitest run packages/core/src/session/golden-stream.test.ts` (then review states by hand; digests change only with a deliberate stream/definition change).
 Note: `.nvmrc` says 22.23.3 but only 22.18.0 is installed locally; it satisfies `>=22 <23`. Docker target (iterations 12, 13): `docker compose -f deploy/docker-compose.test.yml run --rm tests`. Shell is zsh on macOS: `sed -i` needs a suffix; use the Edit tool.
 
 ## Golden vectors
@@ -158,10 +167,10 @@ Note: `.nvmrc` says 22.23.3 but only 22.18.0 is installed locally; it satisfies 
 ## Known gaps
 - Ports: no session-creation method on `SessionStore`, no `DefinitionRegistry` port, no `publishedAt` on `OutboxRow` (adapter concern); adapters and the application layer are out of Phase 1.
 - Dist-reading tests (`dist-output.test.ts`) need `pnpm build` first; `pnpm test` does it. Plain `vitest run` without a build fails with a clear message.
-- `docs/canonical-json-profile.md` and its test (VC-066): iteration 13. 
+- `docs/canonical-json-profile.md` and its test (VC-066): iteration 13.
 - Macro expansion details (D-028..D-030): unordered `to_zone` ignores the macro's `to_position`; `reset_to_zone` rejects duplicate zones; `EMPTY_ZONE` carries path `$[i].count`.
 - Reducer limits (iteration 9): game reducers cannot change cards, zones, counters or control by construction (they return only their partition); the invariant re-check is defence in depth plus the roster-seat references. No engine-side defaults for roster `join`/`leave` (no counter/zone instantiation, spec out of scope). Gate quorum/timeout/nested gates are out of P1. A roster reducer's output is a detached copy, so unchanged seat entries are not `===` to the input's (the `roster` member itself is replaced).
-- VC-022/090-092 properties, VC-067 golden stream, VC-100 perf: 12.
+- Properties, golden stream and perf are done (12); VC-066 doc test and VC-103 KBR script are iteration 13.
 - No batch-length cap in P1 (plan-level decision); payload depth is capped at 64, array lengths and string sizes are not.
 - No canonical schema for actions in P1: VC-025 compares committed actions with a bigint-aware `JSON.stringify` (`actionsText`).
 - `apply` does not check that its input state is frozen (a programmer error). The SPI re-exports `Reducer<S>` from `session/reducer.ts` (done in 11).

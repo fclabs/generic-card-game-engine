@@ -1,0 +1,10 @@
+{
+  "description": "Expected stateDigest after seq 0, 10, 20 and 30 of the golden stream in golden-stream.testing.ts (VC-067).",
+  "batches": 30,
+  "digests": {
+    "0": "f7bc8f855c7fce62c535da139cd003ac56df5cf24bf1a2dc09e3eba67e805af0",
+    "10": "48d75eab1e35c2df9a6f1d7cda867e321f33ed362244f450cac95b90392c05c8",
+    "20": "c7d273905b776c3057e4397f814a191e21413a6e2aa66fcebb87709ef8a36316",
+    "30": "40084930457c24d7d31725e213d34f37770ac9f957bbee5ecb189814aa164010"
+  }
+}
