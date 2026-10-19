@@ -13,3 +13,21 @@ describe("property placeholder", () => {
     fc.assert(fc.property(fc.integer(), (n) => n + 0 === n));
   });
 });
+
+describe("root exports (iteration 1)", () => {
+  it("re-exports ids, errors and snapshot primitives", async () => {
+    const api = await import("./index.js");
+    for (const name of [
+      "isCardId",
+      "cardId",
+      "isSeq",
+      "seq",
+      "ERROR_CODES",
+      "ok",
+      "err",
+      "deepFreeze",
+    ]) {
+      expect(api).toHaveProperty(name);
+    }
+  });
+});

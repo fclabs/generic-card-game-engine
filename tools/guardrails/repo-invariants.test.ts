@@ -285,12 +285,12 @@ describe("FR-043 check 4 — skeleton purity (BR-006)", () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it("fails naming the file when a function declaration is present (VC-074)", () => {
+  it("fails naming the file when a function declaration is present in a non-core package (VC-074, VC-101)", () => {
     const root = mkTempRepo();
     seedMinimalValidRepo(root);
     writeFile(
       root,
-      "packages/core/src/index.ts",
+      "packages/app/src/index.ts",
       "export {};\nfunction f() {}\n",
     );
 
@@ -299,8 +299,25 @@ describe("FR-043 check 4 — skeleton purity (BR-006)", () => {
     if (result.ok) {
       return;
     }
-    expect(result.message).toContain("packages/core/src/index.ts");
+    expect(result.message).toContain("packages/app/src/index.ts");
     expect(result.message).toMatch(/FunctionDeclaration|non-skeleton/);
+  });
+
+  it("passes when packages/core contains code (Phase 1 exemption, VC-101)", () => {
+    const root = mkTempRepo();
+    seedMinimalValidRepo(root);
+    writeFile(
+      root,
+      "packages/core/src/index.ts",
+      "export {};\nexport function f(): number { return 1; }\n",
+    );
+    writeFile(
+      root,
+      "packages/core/src/session/ids.ts",
+      "export const x = 1;\n",
+    );
+
+    expect(checkSkeletonPurity(root)).toEqual({ ok: true });
   });
 });
 
