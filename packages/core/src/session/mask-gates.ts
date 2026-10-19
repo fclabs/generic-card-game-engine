@@ -1,4 +1,5 @@
 import type { SeatId } from "./ids.js";
+import { setOwn } from "./records.js";
 import type { Snapshot } from "./snapshot.js";
 import type { GateMaskedSnapshot, MaskedGate, SessionState } from "./state.js";
 
@@ -16,11 +17,15 @@ export function maskGates(
     const submitted: SeatId[] = gate.expectedSeats.filter((seat) =>
       Object.hasOwn(gate.submissions, seat),
     );
-    open[gateId] = Object.freeze({
-      schemaId: gate.schemaId,
-      expectedSeats: gate.expectedSeats,
-      submitted: Object.freeze(submitted),
-    });
+    setOwn(
+      open,
+      gateId,
+      Object.freeze({
+        schemaId: gate.schemaId,
+        expectedSeats: gate.expectedSeats,
+        submitted: Object.freeze(submitted),
+      }),
+    );
   }
   const gates = Object.freeze({
     open: Object.freeze(open),

@@ -1,9 +1,10 @@
-# CONTEXT — Phase 1 domain kernel (as of Iteration 5)
+# CONTEXT — Phase 1 domain kernel (as of Iteration 6)
 
 ## Current state
-- Iterations 1-5 of 13 done: toolchain, skeleton-purity exemption (`packages/core` only), branded ids, error taxonomy, `Snapshot`/`deepFreeze`, canonical JSON profile v1 + SHA-256, `CompiledGameDefinition` types with `assertDefinitionStructure`, `definitionData` and test builders, `SessionState` types, `createSession`, `stateDigest`, `maskGates`, seeded PRNG (`createPrng`, `uniform`, `shufflePermutation`).
+- Iterations 1-6 of 13 done: toolchain, skeleton-purity exemption (`packages/core` only), branded ids, error taxonomy, `Snapshot`/`deepFreeze`, canonical JSON profile v1 + SHA-256, `CompiledGameDefinition` types with `assertDefinitionStructure`, `definitionData` and test builders, `SessionState` types, `createSession`, `stateDigest`, `maskGates`, seeded PRNG (`createPrng`, `uniform`, `shufflePermutation`), action/macro types and `validateAction`, and `apply` with the primitives `move flip shuffle set_metadata lifecycle`.
 - No runtime dependencies added; `packages/core/package.json` is unchanged.
-- Gate: `pnpm typecheck && pnpm lint && pnpm depcheck && pnpm test && pnpm test:guardrails` all green.
+- `apply` is live for 5 primitives (admission, whole-batch shape validation, copy-on-write working state, atomic commit, structural sharing). All other kinds validate but the applier says "not yet supported" (iterations 7-10).
+- Gate: `pnpm typecheck && pnpm lint && pnpm depcheck && pnpm test && pnpm test:guardrails` all green (376 tests, 31 files).
 
 ## File map (`packages/core/src`)
 | Path | Contents |
@@ -26,6 +27,21 @@
 | `session/prng.ts` | `Uint32Stream`, `Prng`, `createPrng`, `uniform`, `shufflePermutation`, `seedWords` (internal) |
 | `session/prng.testing.ts` | test-only `scriptedStream(values)` |
 | `session/generate-prng-vectors.testing.ts`, `prng-vectors.json`, `prng.test.ts` | independent vector generator (limb FNV, no bigint), 5 committed seed classes, VC-070/071 |
+| `session/actions.ts` | `Action`/`Macro` wire types (15 primitives, 3 macros), `PRIMITIVE_KINDS`, `MACRO_KINDS`, `isMacro` |
+| `session/action-validate.ts` | `validateAction(raw, path='$')` table-driven shape validator (`FIELDS` table = single source of truth), `MAX_PAYLOAD_DEPTH` |
+| `session/actions.testing.ts`, `action-validate.test.ts` | builders `A.move/flip/shuffle/setMetadata/lifecycle/draw`, `SAMPLES` (one valid wire object per kind/op), `actionsText`; VC-029 shape part |
+| `session/records.ts` | `hasOwn`, `getOwn`, `setOwn` (own-property-safe record helpers, D-018); `records.test.ts` |
+| `session/apply/index.ts` | exports `apply`, types `ApplyOptions ApplySuccess ProposalDescriptor` |
+| `session/apply/apply.ts` | orchestrator (the five stages) |
+| `session/apply/admission.ts` | stage 1: ended-session table (KBR-004/009), turn enforcement (KBR-005) |
+| `session/apply/validate-batch.ts` | stage 2: shape of every action, lifecycle-last, fresh copies |
+| `session/apply/expand.ts` | stage 3a: expansion hook (primitives identity; macros "not yet supported" until iteration 10) |
+| `session/apply/primitives/{index,move,flip,shuffle,set-metadata,lifecycle}.ts` | stage 3b: `applyPrimitive` switch + handlers |
+| `session/apply/conservation.ts` | stage 4 hook (`checkConservation`, `CommittedEntry`); no-op until iteration 7 |
+| `session/apply/commit.ts` | stage 5: `commit`, `emptyResult`, `SessionEnded` notifications |
+| `session/apply/working-state.ts`, `context.ts`, `def-index.ts`, `types.ts` | `WorkingState`, `ApplyContext`/`makeContext`, `indexDefinition`, `ApplyOptions`/`ApplySuccess` |
+| `session/apply/apply.testing.ts`, `invariants.testing.ts` | `must`, `errorOf`, `defaultRoster`, `startState(def?, roster?)`; `structuralProblems(state)` (KBR-001 walk) |
+| `session/apply/{apply,primitives,shuffle-no-prng}.test.ts` | VC-004..005, 013, 015, 020-021, 023-025, 027-029, 030-034, 039-040, 072 |
 | `util/utf8.ts`, `util/utf8.test.ts` | internal `encodeUtf8` (not exported from any index) |
 | `replay/index.ts` | `export * from "./canonical/index.js"` |
 | `replay/canonical/{canonicalize,schema,sha256}.ts` | profile v1 implementation (+ `*.test.ts` beside each; `index.test.ts` = VC-068 partial) |
@@ -42,7 +58,7 @@
 | `definition/definition.testing.ts` | `buildDefinition(overrides?)`, `buildFloorDefinition()` (test-only; not exported from the index) |
 | `definition/definition.test.ts` | VC-083, VC-054 (definition half), VC-089 (shape half), floor shape |
 | `definition/index.ts` | re-exports types, `assertDefinitionStructure`, `definitionData` |
-| `session/index.ts` | `export * from ids`, `deepFreeze`, `DeepReadonly`, `Snapshot`, state types, `createSession`, `maskGates`, `createPrng`, `uniform`, `shufflePermutation`, types `Prng`, `Uint32Stream` |
+| `session/index.ts` | `export * from ids`, actions types, `validateAction`, `apply` (+ `ApplyOptions ApplySuccess ProposalDescriptor`), `deepFreeze`, `DeepReadonly`, `Snapshot`, state types, `createSession`, `maskGates`, `createPrng`, `uniform`, `shufflePermutation`, types `Prng`, `Uint32Stream` |
 Other changes: `packages/core/tsconfig.json` excludes `src/**/*.testing.ts`; `tools/guardrails/repo-invariants.ts` `checkSkeletonPurity` skips `packages/core/`.
 
 ## Public interfaces
@@ -59,6 +75,12 @@ Other changes: `packages/core/tsconfig.json` excludes `src/**/*.testing.ts`; `to
 - PRNG (`core/session`, re-exported from root; spec §6.3): `interface Uint32Stream {readonly nextUint32: () => {readonly value: number; readonly next: Uint32Stream}}`; `type Prng = Uint32Stream` (immutable class instance, frozen; the 12 discard steps are done in `createPrng`). `createPrng(seed: string): Result<Prng>`: seed UTF-8 bytes <= 256, else/lone surrogate -> `{code:'MALFORMED_ACTION', detail}` (no `actionIndex`/`path`). `uniform(stream, n): {value, next}` throws `RangeError` unless `n` is an integer in `[1, 2**32]`; rejected draws are consumed. `shufflePermutation<T>(stream, ids: readonly T[]): {permutation: readonly T[], next}` (Fisher-Yates from `len-1` down to 1, input untouched, no draws for length 0/1). `seedWords(seed): Result<readonly number[]>` lives in `session/prng.ts` only (NOT in the index; unsigned a,b,c,d before any sfc32 step). Test helper `scriptedStream(values): {stream, consumed()}` in `session/prng.testing.ts` (throws when exhausted; `consumed()` = highest draw index reached). See D-013.
 - Test helper (`session/state.testing.ts`): `variant(state, edit: (draft: Mutable<SessionState>) => void): Snapshot<SessionState>` (clone, edit, deep-freeze), `cloneData`, `Mutable<T>`.
 - `definitionDataSchema` (`replay/canonical/definition-schema.ts`, core-internal): schema of `DefinitionData`; `canonicalize(definitionDataSchema, definitionData(def))` works for any valid definition.
+- actions (`core/session`, re-exported from root): `Action` (union of `MoveAction FlipAction ShuffleAction SetMetadataAction LifecycleAction CounterAdjustAction CounterTransferAction ControlSetAction ControlAdvanceAction GrantViewAction RevokeViewAction ZoneCreateAction ZoneDestroyAction RosterAction MetaAction`, discriminated by `kind`), `Macro` (`DrawMacro ZoneMergeMacro ResetToZoneMacro`), `Ratio {num, den: bigint}`, `ActionKind`, `MacroKind`. Field names snake_case as on the wire; `bigint` for `delta amount ratio.num ratio.den`; see D-014 for roster per-op fields, optional `grant_id`/`zone_id`, `control_advance.mode`. `validateAction(raw: unknown, path = "$"): Result<Action | Macro>` returns a fresh normalised copy or `MALFORMED_ACTION` with `path` (also in `detail`).
+- `apply(def, state: Snapshot<SessionState>, batch: readonly (Action | Macro)[], opts: ApplyOptions = {}): Result<ApplySuccess>` (`core/session`, synchronous). `ApplyOptions {proposal?: {origin: 'player'|'dealer'|'control'|'system'; kind: string; actingSeat?: SeatId}}`; `ApplySuccess {state; committed: readonly Action[]; notifications: readonly SessionEnded[]}` (result, committed list and notifications deep-frozen). Behaviour: (1) admission on the input state: `terminated` -> every batch `SESSION_ENDED`; `completed` -> only exactly `[lifecycle(terminated)]` is admitted (checked on the raw batch), else `SESSION_ENDED`; then turn enforcement (`NOT_YOUR_TURN`, D-015); both with `actionIndex 0`; (2) shape of every action (`MALFORMED_ACTION`, `actionIndex` = index, `path` `$[i].field`) and lifecycle-must-be-last, whole batch first, non-array batch is malformed; (3) per action: expand then apply each primitive over a `WorkingState`, error `actionIndex` = input index; (4) `checkConservation` hook; (5) `seq + 1`, freeze new objects only. Empty batch (after admission) returns the input reference, `committed []`, no `seq` change. A `seq` past `MAX_SAFE_INTEGER` throws `RangeError`. Never throws for batch/option content.
+- Primitive semantics implemented: `move` (check order in D-019; position 0 = top; same-zone positions read after removal; unordered zones append and take no position), `flip`, `shuffle` (exact rearrangement of an ordered zone's members, never touches the PRNG), `set_metadata` (declared fields and types: string/int(JSON number)/bool/json), `lifecycle` (legal transitions, outcome overwrite/keep per D-016).
+- Handler API (core-internal, `session/apply`): `type Handler = (ctx: ApplyContext, action) => Result<Action>`; `ApplyContext {def, index: DefIndex, work: WorkingState, inputIndex, position, seq, fail(code, detail, path?), path(suffix?)}`. `WorkingState`: `base`, `state`, `dirty`, `card(id)`, `zone(id)`, `patch(key: 'cards'|'zones'|'counters'|'zoneOrdinals'|'meta'|'grants', id, value|undefined)`, `putCard`, `putZone`, `replace(key: 'lifecycle'|'outcome'|'control'|'roster'|'gates'|'delegations', value)`, `commit(seq)`. `DefIndex`: `zone(id) template(name) card(id) isOrdered(id, zoneState)`.
+- Test helpers: `A.*` builders and `SAMPLES` (`session/actions.testing.ts`), `startState`, `must`, `errorOf` (`session/apply/apply.testing.ts`), `structuralProblems` (`invariants.testing.ts`), plus `variant`, `scriptedStream`, `isDeepFrozen` from earlier iterations.
+
 - Test helper: `isDeepFrozen(v: unknown): boolean` in `session/snapshot.testing.ts`.
 
 - canonical (`core/replay/canonical`, also re-exported by `core/replay` and the root): `canonicalize(schema: CanonicalSchema, value: unknown): Uint8Array` (throws `CanonicalError`), `class CanonicalError extends Error {readonly path: string}` (path syntax `$`, `.field`, `[3]`, `["idMapKey"]`), `sha256Hex(bytes): string` (lower-case, 64 chars), type `CanonicalSchema`. `stateDigest(definition: CompiledGameDefinition, state: Snapshot<SessionState>): string` (iteration 4; lower-case hex SHA-256).
@@ -105,7 +127,12 @@ Note: `.nvmrc` says 22.23.3 but only 22.18.0 is installed locally; it satisfies 
 - The generator is independent of `prng.ts`; `seed-a` words/values are also hard-coded in the test (from a Python reference). Entry: `{name, description, seed, seedBytes, words[4], values[10]}` (values = outputs 13..22).
 
 ## Known gaps
-- `docs/canonical-json-profile.md` and its test (VC-066): iteration 13. `apply`: 6-10 (it must deep-freeze only new objects; `stateDigest` and `maskGates` already accept any frozen state). SPI/ports types: 11.
+- `docs/canonical-json-profile.md` and its test (VC-066): iteration 13. SPI/ports types: 11.
+- `apply` kinds not yet implemented (validated, then "not yet supported" `MALFORMED_ACTION`): counters (7), `control_*`, grants, zones, delegations (8), `meta`/`roster`/`engine.*` (9), macros `draw zone_merge reset_to_zone` (10). `expand` rejects macros; `checkConservation` is a no-op hook (7).
+- VC-004 remaining cases: `[draw 2, ...]`, `EMPTY_ZONE` at index 2 (10), reducer failure at index 3 (9), conservation index (7). VC-024 `[draw count 0]` case (10). VC-027 "active player proposing `control_set{active_seats}`" runs fully in iteration 8 (today it only proves admission is not `NOT_YOUR_TURN`). VC-022/090-092 properties, VC-067 golden stream, VC-100 perf: 12.
+- No batch-length cap in P1 (plan-level decision); payload depth is capped at 64, array lengths and string sizes are not.
+- No canonical schema for actions in P1: VC-025 compares committed actions with a bigint-aware `JSON.stringify` (`actionsText`).
+- `apply` does not check that its input state is frozen (a programmer error). Reducers' `PartitionReducer` placeholder type: iteration 11.
 - Definition gaps: duplicate zone-template names, duplicate meta schema ids, duplicate conservation group ids and `maxInstances` sanity are NOT checked (not in KFR-101); no definition `id`/content identity field (P2).
-- State gaps decided in iteration 4 (D-010): initial card orientation `face_down`, initial metadata `{}`, initial `meta` partitions `{}`; per-card metadata strictness is only checked by `apply` (KFR-033), the digest schema is the union of declared fields. Record keys such as `__proto__` are not guarded (valid id charset; assignment into plain records would misbehave) — revisit when `apply` builds records.
+- State gaps (D-010): initial card orientation `face_down`, initial metadata `{}`, initial `meta` partitions `{}`; per-card metadata strictness is enforced by `apply` (`set_metadata`), the digest schema is the union of declared fields. Keyed records with ids like `__proto__` are handled by own-key helpers (D-018): code reading records by caller ids must use `getOwn`/`hasOwn`.
 - `GameRejection` shape (`code` + optional `detail`) is a plan-level choice (D-001); revisit in iteration 11/12 if the SPI needs more.

@@ -4,6 +4,7 @@ import { err, ok } from "../errors/result.js";
 import type { Result } from "../errors/result.js";
 import type { CardId, SeatId, SessionId, Seq, ZoneId } from "./ids.js";
 import type { CounterId } from "./ids.js";
+import { setOwn } from "./records.js";
 import { deepFreeze } from "./snapshot.js";
 import type { Snapshot } from "./snapshot.js";
 import type {
@@ -84,33 +85,37 @@ export function createSession(
   );
   const cards: Record<CardId, CardState> = {};
   for (const card of definition.cards) {
-    cards[card.id] = {
+    setOwn<CardState>(cards, card.id, {
       zone: card.startingZone,
       orientation: "face_down",
       metadata: {},
-    };
+    });
     zoneMembers.get(card.startingZone)?.push(card.id);
   }
   const zones: Record<ZoneId, ZoneState> = {};
   for (const zone of definition.zones) {
-    zones[zone.id] = { members: zoneMembers.get(zone.id) ?? [] };
+    setOwn<ZoneState>(zones, zone.id, {
+      members: zoneMembers.get(zone.id) ?? [],
+    });
   }
 
   const counters: Record<CounterId, bigint> = {};
   for (const counter of definition.counters) {
-    if (counter.derived === undefined) counters[counter.id] = counter.initial;
+    if (counter.derived === undefined) {
+      setOwn(counters, counter.id, counter.initial);
+    }
   }
 
   const meta: Record<string, JsonValue> = {};
-  for (const schema of definition.metaSchemas) meta[schema.id] = {};
+  for (const schema of definition.metaSchemas) setOwn(meta, schema.id, {});
 
   const seats: Record<SeatId, RosterSeat> = {};
   for (const entry of roster) {
-    seats[entry.seat] = {
+    setOwn<RosterSeat>(seats, entry.seat, {
       status: "seated",
       ...(entry.player !== undefined ? { player: entry.player } : {}),
       ...(entry.team !== undefined ? { team: entry.team } : {}),
-    };
+    });
   }
 
   const state: SessionState = {
