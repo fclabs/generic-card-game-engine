@@ -314,7 +314,7 @@ describe("unsupported kinds are rejected until their iteration", () => {
     const e = errorOf(
       apply(def, start, [
         A.move("c1", "deck", "table"),
-        { kind: "counter_adjust", counter_id: "pot", delta: 1n } as never,
+        { kind: "control_set", phase: "play" } as never,
       ]),
     );
     expect(e.code).toBe("MALFORMED_ACTION");

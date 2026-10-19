@@ -1,6 +1,7 @@
 import type { Result } from "../../../errors/result.js";
 import type { Action } from "../../actions.js";
 import type { ApplyContext } from "../context.js";
+import { applyCounterAdjust, applyCounterTransfer } from "./counters.js";
 import { applyFlip } from "./flip.js";
 import { applyLifecycle } from "./lifecycle.js";
 import { applyMove } from "./move.js";
@@ -28,7 +29,9 @@ export function applyPrimitive(
     case "lifecycle":
       return applyLifecycle(ctx, action);
     case "counter_adjust":
+      return applyCounterAdjust(ctx, action);
     case "counter_transfer":
+      return applyCounterTransfer(ctx, action);
     case "control_set":
     case "control_advance":
     case "grant_view":

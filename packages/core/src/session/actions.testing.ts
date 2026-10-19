@@ -1,6 +1,8 @@
 import type { Result } from "../errors/result.js";
 import type {
   Action,
+  CounterAdjustAction,
+  CounterTransferAction,
   DrawMacro,
   FlipAction,
   LifecycleAction,
@@ -8,7 +10,7 @@ import type {
   SetMetadataAction,
   ShuffleAction,
 } from "./actions.js";
-import { cardId, zoneId } from "./ids.js";
+import { cardId, counterId, zoneId } from "./ids.js";
 import type { JsonValue, Lifecycle, Orientation } from "./state.js";
 
 function must<T>(result: Result<T>): T {
@@ -17,6 +19,7 @@ function must<T>(result: Result<T>): T {
 }
 const c = (v: string) => must(cardId(v));
 const z = (v: string) => must(zoneId(v));
+const k = (v: string) => must(counterId(v));
 
 /** Test-only action builders taking plain strings (the branded ids are made here). */
 export const A = {
@@ -46,6 +49,35 @@ export const A = {
       kind: "lifecycle",
       to_state: to,
       ...(outcome !== undefined ? { outcome } : {}),
+    };
+  },
+  adjust(
+    counter: string,
+    delta: bigint,
+    ratio?: [bigint, bigint],
+  ): CounterAdjustAction {
+    return {
+      kind: "counter_adjust",
+      counter_id: k(counter),
+      delta,
+      ...(ratio ? { ratio: { num: ratio[0], den: ratio[1] } } : {}),
+    };
+  },
+  transfer(
+    from: string,
+    to: string,
+    amount: bigint,
+    opts: { ratio?: [bigint, bigint]; remainderTo?: string } = {},
+  ): CounterTransferAction {
+    return {
+      kind: "counter_transfer",
+      from_counter: k(from),
+      to_counter: k(to),
+      amount,
+      ...(opts.ratio
+        ? { ratio: { num: opts.ratio[0], den: opts.ratio[1] } }
+        : {}),
+      ...(opts.remainderTo ? { remainder_to: k(opts.remainderTo) } : {}),
     };
   },
   draw(from: string, count: number, to: string, position?: number): DrawMacro {

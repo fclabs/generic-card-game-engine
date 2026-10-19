@@ -113,3 +113,15 @@
 **Decision**: Order: unknown card (`MALFORMED_ACTION`) -> unknown `to_zone` (`MALFORMED_ACTION`) -> card not in `from_zone`, including an unknown `from_zone` (`CARD_NOT_IN_ZONE`) -> position rules (`MALFORMED_ACTION`, path `.to_position`). A same-zone move to the unchanged slot, an unordered same-zone move (card goes to the end), a `flip` to the current orientation (card `===`) and `set_metadata` with empty `fields` (no write) are valid committed actions. Until their iteration, the kinds `counter_*`, `control_*`, `grant_view`, `revoke_view`, `zone_*`, `roster`, `meta` and the macros fail `MALFORMED_ACTION` "not yet supported" at the input index, after validation.
 **Rejected**: `MALFORMED_ACTION` for an unknown `from_zone` (the card is literally not in it; matches requirements §5.6.3).
 **Consequences**: Iterations 7-10 replace those placeholders; the "not yet supported" tests in `primitives.test.ts` and `apply.test.ts` must be updated as kinds land.
+
+## D-020: Counter handler semantics  (Iteration 7)
+**Context**: KFR-034/035/061 leave order of checks, the shape of errors, `credited > amount` and zero remainders open.
+**Decision**: Handlers live in `apply/primitives/counters.ts`; counter lookups use a new lazy `DefIndex.counter(id)`. `counter_transfer` computes the net change per counter id first (aliasing), checks bounds on the final values and writes only if all pass; with `ratio`, `credited = ratioRound(amount, ratio, source mode)` and `remainder = amount - credited`, which is negative when `credited > amount` and is applied as-is (bounds on final values). A zero remainder needs no `remainder_to`; a given `remainder_to` is still validated (exists, not derived). Order: negative amount, endpoints (from, to, remainder_to: unknown or derived), ratio mode, remainder rule, bounds. A ratio on a counter without `rounding` is `MALFORMED_ACTION` at `.ratio`. `counter_adjust`/`counter_transfer` log the original action (replay recomputes `applied`).
+**Rejected**: Writing each counter sequentially (transient bound failures on aliasing); logging the computed `applied` (changes the wire shape, KFR-025 wants the action as given).
+**Consequences**: Reducers (iteration 9) must re-check bounds themselves; conservation recomputes `applied` with the same helpers (`adjustApplied`, `transferChanges`).
+
+## D-021: Conservation check and supply direction  (Iteration 7)
+**Context**: KFR-062 allows net `applied` of supply-role adjusts; it does not say mint must increase or burn decrease.
+**Decision**: Per group, `after == before + sum(applied of counter_adjust on members with a supply_role)`; the sign of the adjust is not checked (`mint` may decrease, `burn` may increase) in P1. `counter_transfer` is never supply. `actionIndex` = last input action with a non-zero net change on a group member (zero-delta actions do not count). Runs once, after all actions, only when something was committed.
+**Rejected**: Enforcing direction (not required by spec, plan-level decision); counting any touch (a no-op adjust is not a change).
+**Consequences**: A later phase can tighten direction without changing the pipeline hook.

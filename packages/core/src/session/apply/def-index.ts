@@ -1,5 +1,6 @@
 import type {
   CardDecl,
+  CounterDecl,
   CompiledGameDefinition,
   ZoneDecl,
   ZoneTemplateDecl,
@@ -11,6 +12,7 @@ export interface DefIndex {
   zone(id: string): ZoneDecl | undefined;
   template(name: string): ZoneTemplateDecl | undefined;
   card(id: string): CardDecl | undefined;
+  counter(id: string): CounterDecl | undefined;
   /** Whether a zone keeps order: its template's flag for template zones, else its declaration's. */
   isOrdered(id: string, zone: Pick<ZoneState, "template">): boolean;
 }
@@ -27,10 +29,12 @@ export function indexDefinition(def: CompiledGameDefinition): DefIndex {
   const zone = lazyMap(def.zones, (z) => z.id);
   const template = lazyMap(def.zoneTemplates, (t) => t.name);
   const card = lazyMap(def.cards, (c) => c.id);
+  const counter = lazyMap(def.counters, (c) => c.id);
   return {
     zone,
     template,
     card,
+    counter,
     isOrdered(id, state) {
       if (state.template !== undefined) {
         return template(state.template)?.ordered ?? false;
