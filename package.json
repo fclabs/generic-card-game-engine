@@ -17,7 +17,8 @@
     "test:coverage": "pnpm build && vitest run --coverage",
     "test:guardrails": "pnpm build && vitest run --config vitest.guardrails.config.ts",
     "test:all": "pnpm test && pnpm test:guardrails",
-    "bundle:games": "pnpm build && node packages/config/dist/bundle-games.js"
+    "bundle:games": "pnpm build && node packages/config/dist/bundle-games.js",
+    "config:check": "pnpm build && node packages/config/dist/cli.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

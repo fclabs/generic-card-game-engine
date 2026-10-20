@@ -1,0 +1,27 @@
+# Sample engine configuration, mounted by deploy/docker-compose.yml at
+# /etc/engine/server.yaml. Secrets are never written here: ${NAME} is replaced
+# from the environment at load time and the load fails if the variable is unset.
+server:
+  http:
+    host: 0.0.0.0
+    port: 8080
+
+auth:
+  mode: static-api-key
+  keys:
+    - id: host
+      secret: "${ENGINE_HOST_KEY}"
+      can: [propose, query, subscribe, export, direct_apply, fork, admin]
+
+store:
+  kind: sqlite
+  sqlite:
+    path: /data/engine.db
+    journal: wal
+
+games:
+  search_paths: [/app/games]
+
+logging:
+  level: info
+  format: json

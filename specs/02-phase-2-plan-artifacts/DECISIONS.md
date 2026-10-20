@@ -246,3 +246,24 @@ Append-only. Entry format: `## D-NNN: <title>  (Iteration N)` with Context, Deci
 **Context.** Hand-off asks for how to build `DefinitionLimits` and a redaction helper.
 **Decision.** Besides `loadServerConfig`, `@cge/config` exports `definitionLimitsFromConfig(config): DefinitionLimits` (`{cascadeCapMax: limits.cascadeCap.max, costBudgetMax: limits.hook.costBudget}`), `redactServerConfig(config)` (copy with every `auth.keys[].secret` = `<redacted>`, for logging), `REDACTED`, `CONFIG_ERROR_CODES`, `SERVER_CAPABILITIES` and the types `ServerConfig`, `ConfigError`, `ConfigErrorCode`, `ServerStoreConfig`, `ServerAuthKey`, `ServerCapability`, `LogLevel`, `LogFormat`.
 **Consequences.** `config:check` and P7 should log only `redactServerConfig(config)`.
+
+## D-036: `config:check` default games directory on a host without `/app/games`  (Iteration 11)
+
+**Context.** DFR-075 defaults to the config's `games.search_paths`; the sample config says `[/app/games]`, which exists only in the image, so `ENGINE_HOST_KEY=... pnpm config:check` on the repo would fail `SEARCH_PATH_MISSING` and the plan's final acceptance step 4 (exit 0, `OK <n> definitions`) could not hold. DFR-052 requires the registry itself to report a missing path.
+**Decision.** The registry is unchanged. Only the CLI, when `--games` is absent, drops configured search paths that are not directories (stderr `warning: <path>: SEARCH_PATH_MISSING: ... skipped`); if none remain it checks `./games` (cwd) with a second warning; if `./games` is also absent it passes the configured paths on so the registry reports `SEARCH_PATH_MISSING` (exit 1). `--games` is never softened: a missing `--games` directory is an error.
+**Rejected.** Failing on the host (breaks the acceptance test); a `--games games` baked into the root script (user `--games` would add to it); mapping `/app/games` to a repo path.
+**Consequences.** In Docker `/app/games` always exists, so nothing is skipped there. On a host, an operator typo in `search_paths` is only a warning in `config:check` (the P7 server still fails at start). Warnings go to stderr and do not affect the exit code.
+
+## D-037: CLI structure, exit codes, output  (Iteration 11)
+
+**Context.** DFR-075 names only exit 0 and 1; `process.env` may be read only in the CLI entry.
+**Decision.** `packages/config/src/cli.ts` (entry, compiled to `dist/cli.js`) is the only file reading `process.env`; the logic is `runConfigCheck(argv, env)` in `config-check.ts` returning `{exitCode, stdout, stderr}` (not exported from the package root). Exit 0 ok, 1 any validation error (including an unreadable `--server` file, reported as `<path>: CONFIG_MISSING: cannot read ...`), 2 bad command line (unknown flag, `--server` without a value, `--games` without a directory; prints usage). Error line = `<path>: <code>: <detail>`; a root-level error (`path ""`) uses the server file path. Config errors use the key path (`auth.keys[0].secret`), registry errors the game-directory-prefixed path (iteration 9). `--games a b c` takes every following non-flag token; `--games` directories are resolved against cwd. Default server path is `config/server.yaml` relative to cwd. Nothing from `ServerConfig` is printed on success.
+**Rejected.** Exit 1 for usage errors (indistinguishable from validation failure); a new `ConfigErrorCode` for unreadable files (closed union fixed by §7.5).
+**Consequences.** The root script is `pnpm build && node packages/config/dist/cli.js`; extra pnpm args are appended.
+
+## D-038: Docker game staging; `config/.gitkeep` removed  (Iteration 11)
+
+**Context.** DFR-081: `/app/games` holds each game's `game.yaml` and `dist/` and exists with no games; `.dockerignore` excludes `**/dist`, so host bundles never enter the context.
+**Decision.** In the `build` stage a second `RUN pnpm bundle:games && mkdir -p /out/games && for d in games/*/ ...` builds bundles inside the image and stages only `game.yaml` and `dist/` per game under `/out/games`; the `runtime` stage does `COPY --from=build /out/games /app/games` before the read-only `chown/chmod` step. `.dockerignore` is unchanged. `config/.gitkeep` is removed (the directory now holds `server.yaml`; nothing referenced it). The `test` stage inherits the extra build step harmlessly.
+**Rejected.** `COPY --from=build /app/games` (would ship `hooks.ts` sources); editing `.dockerignore`; running `bundle:games` in the runtime stage (needs esbuild and sources).
+**Consequences.** Verified with a throwaway game: only `game.yaml`, `dist/hooks.js`, `dist/hooks.manifest.json` reach the image.

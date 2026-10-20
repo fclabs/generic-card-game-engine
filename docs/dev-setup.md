@@ -50,6 +50,7 @@ Several scripts begin with `pnpm build` so a clean checkout never needs a separa
 | `test:all` | `pnpm test` then `pnpm test:guardrails` | Exit 0 only if both succeed |
 | `test:coverage` | Same as `test` with V8 coverage | Exit 0; writes `coverage/` (git-ignored) |
 | `bundle:games` | Build, then `node packages/config/dist/bundle-games.js [gamesRoot]`: builds `dist/hooks.js` and `dist/hooks.manifest.json` for every `games/<id>/` whose `game.yaml` sets `hooks.module` (default root `games`) | Exit 0 (also when there are no games); exit 1 naming each failing game. Bundles are built and hashed, never executed |
+| `config:check` | Build, then `node packages/config/dist/cli.js [--server <path>] [--games <dir>…]`: loads `config/server.yaml` (or `--server`) with `process.env`, then builds the filesystem definition registry over `games.search_paths` (or the `--games` directories) | Exit 0 and prints `OK <n> definitions`; exit 1 with one `<path>: <code>: <detail>` line per error on stderr (for example `ENV_MISSING` when `ENGINE_HOST_KEY` is unset); exit 2 on a bad command line. Needs `ENGINE_HOST_KEY` (16–256 characters) set. A configured search path missing on the host (`/app/games` outside Docker) is skipped with a warning and `./games` is checked instead; secrets are never printed |
 
 Prettier ignores `docs/**`, the lockfile, `LICENSE`, `dist/`, `coverage/`, and guardrail fixtures (plus a few other tracked trees listed in `.prettierignore`). Markdown under `docs/` is left untouched by `format` / `format:check`.
 
@@ -77,7 +78,7 @@ To start the service (when a host config file exists):
 docker compose -f deploy/docker-compose.yml up
 ```
 
-In the current foundation, `config/server.yaml` is not present, so `up` cannot start `engine`. Use `config` for validation until that file lands.
+`config/server.yaml` is present and reads the key from `ENGINE_HOST_KEY` (export it in the shell before `up`).
 
 ### Handy one-liners
 

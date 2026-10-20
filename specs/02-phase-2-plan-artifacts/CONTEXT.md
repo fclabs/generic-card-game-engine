@@ -1,4 +1,4 @@
-# CONTEXT: Phase 2 (updated after Iteration 10)
+# CONTEXT: Phase 2 (updated after Iteration 11)
 
 ## Current state
 - Phase 0 workspace and Phase 1 domain kernel (`packages/core`) are shipped. Iteration 1 changed the P1 definition types, `createSession`, `assertDefinitionStructure`, reducer dispatch in `apply`, and the identity schema (DFR-060–066). Iterations 2-4 built the compiler: **`compileDefinition` is now complete** (every section of §7.1, `HookBundleInfo` checks, `ctx.limits`, identity validation and structural assertion before `ok`).
@@ -7,8 +7,9 @@
 - Iteration 7 added safe YAML intake: `parseYaml` in `packages/config/src/yaml.ts` (exported from the config root), `yaml@2.9.1` as the first config runtime dependency, fixtures under `packages/config/fixtures/`, and the YAML-text forms of VC-230 and the VC-275 parse parts. The full text -> `parseYaml` -> `compileDefinition` -> `definitionContentHash` path works. No bundle code, registry implementation or server-config code exists yet.
 - Iteration 8 added hook-bundle packaging: `buildHookBundle`/`bundleGames` in `packages/config/src/bundle.ts`, the `bundle:games` root script (entry `packages/config/src/bundle-games.ts`), `esbuild@0.28.2` (second config runtime dependency), three fixture games and the VC-235 static no-execution test. Bundles are built and hashed only.
 - Iteration 9 added the filesystem `DefinitionRegistry` (`packages/config/src/registry.ts`, exported from `@cge/config`), the adapter-agnostic contract suite `registry-contract.testing.ts` and the generated 20-game perf fixture. No server-config code exists yet (iteration 10).
-- Iteration 10 added the server configuration loader (`packages/config/src/server-config.ts`, exported from `@cge/config`) and `zod@4.6.7` (third and last config runtime dependency). No `config/server.yaml`, no `config:check`, no docs yet (iteration 11/12).
-- Every P1 test passes (`pnpm test`: 1063 tests; 174 in `pnpm test:guardrails`); `golden-vectors.json`, `session/golden-stream.json`, `session/prng-vectors.json` are byte-identical to `3bbdd4a`.
+- Iteration 10 added the server configuration loader (`packages/config/src/server-config.ts`, exported from `@cge/config`) and `zod@4.6.7` (third and last config runtime dependency). 
+- Iteration 11 added `config/server.yaml` (sample), `pnpm config:check` (`packages/config/src/{cli,config-check}.ts`) and Docker game packaging (`/app/games` in the runtime image). Only docs (iteration 12) remain.
+- Every P1 test passes (`pnpm test`: 1074 tests; 174 in `pnpm test:guardrails`); `golden-vectors.json`, `session/golden-stream.json`, `session/prng-vectors.json` are byte-identical to `3bbdd4a`.
 - Docs under `docs/` are NOT yet updated (Iteration 12 owns them); `docs/canonical-json-profile.md` (line ~121) and `docs/domain-kernel.md` still mention `definitionDataSchema` and the three removed flags.
 
 ## File map (packages/core/src, P1 as built + Iteration 1)
@@ -173,6 +174,12 @@ redactServerConfig(config): ServerConfig               // copy with every secret
 - At most 100 errors (truncated, no flag). Secret must be exactly one `${NAME}` in the source; literal secret -> `CONFIG_INVALID` redacted. In YAML flow mappings quote placeholders: `secret: "${KEY}"` (D-033).
 - Test file `server-config.test.ts` (VC-260..263, 68 tests); `server-config.ts` passes the VC-235 scan.
 
+## Sample config, `config:check` and Docker (Iteration 11)
+- `config/server.yaml`: server http 0.0.0.0:8080, `auth` static-api-key with one key `host` (`secret: "${ENGINE_HOST_KEY}"`, all seven capabilities), store sqlite `/data/engine.db` wal, `games.search_paths: [/app/games]`, logging info/json. Mounted read-only by `deploy/docker-compose.yml` at `/etc/engine/server.yaml`. `config/.gitkeep` removed (D-038). Tests: `packages/config/src/config-check.test.ts` (VC-264 in-process, VC-265 as child processes of `packages/config/dist/cli.js`, needs `pnpm build`).
+- CLI: `pnpm config:check [--server <path>] [--games <dir>...]` = `pnpm build && node packages/config/dist/cli.js`. `cli.ts` (only `process.env` reader) calls `runConfigCheck(argv, env)` (`config-check.ts`, returns `{exitCode, stdout, stderr}`; also exports `CONFIG_CHECK_USAGE`, `DEFAULT_SERVER_CONFIG_PATH`; not in the package root). Exit 0 prints `OK <n> definitions` to stdout; exit 1 prints one `<path>: <code>: <detail>` per error to stderr; exit 2 = bad command line. Registry limits come from `definitionLimitsFromConfig(config)`. Search path defaults on a host without `/app/games`: D-036 (warn, skip, fall back to `./games`). Details: D-037.
+- Dockerfile: `build` stage = `RUN pnpm build` then `RUN pnpm bundle:games && ...` staging `/out/games/<id>/{game.yaml,dist/}`; `runtime` stage `COPY --from=build /out/games /app/games` before the `chown root / chmod a-w /app` step; user `node`, `/app` and `/app/games` mode `dr-xr-xr-x` root. `.dockerignore` unchanged (D-038). Docker `test` stage inherits the extra build step.
+- `packages/config/dist/cli.js` ships in the runtime image (`COPY packages/config/dist`), so `node packages/config/dist/cli.js --server /etc/engine/server.yaml` works inside a container (verified).
+
 ## Guardrail and package state (Iteration 6; yaml added in 7)
 - **Check 4 (skeleton purity)** exempts `packages/core` and `packages/config`; every other package stays `export {}`/re-exports only.
 - **Check 5** (exact devDependency versions, single vitest/fast-check) is unchanged.
@@ -210,6 +217,17 @@ pnpm build && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test && pnpm 
 pnpm build && pnpm exec vitest run packages/core/src/session packages/core/src/definition
 pnpm build && pnpm exec vitest run packages/config          # CGE_PERF_STRICT=1 for the strict perf bounds
 git diff 3bbdd4a -- packages/core/src/replay/canonical/golden-vectors.json   # must be empty
+pnpm config:check [--server <path>] [--games <dir>...]       # needs ENGINE_HOST_KEY (16-256 chars) for the sample config
+ENGINE_HOST_KEY=xxxxxxxxxxxxxxxx pnpm config:check            # on the repo: OK 0 definitions (+ warnings on stderr, D-036)
+pnpm config:check                                             # key unset: exit 1, ENV_MISSING
+# VC-272 (rerun in iteration 12; remove the image afterwards):
+docker build --progress=plain --no-cache -f deploy/Dockerfile --target runtime -t cge-runtime-check . 2>&1 | tee /tmp/vc272.log
+grep -c "bundle:games" /tmp/vc272.log                         # > 0: build stage ran pnpm bundle:games
+docker run --rm --entrypoint ls cge-runtime-check /app/games  # exit 0
+docker run --rm --entrypoint sh cge-runtime-check -c 'id -u; touch /app/x; echo $?'   # 1000, "Permission denied", 1
+docker image inspect cge-runtime-check --format '{{.Config.User}}'                  # node
+docker run --rm -e ENGINE_HOST_KEY=xxxxxxxxxxxxxxxx -v "$PWD/config/server.yaml:/etc/engine/server.yaml:ro" --entrypoint node cge-runtime-check packages/config/dist/cli.js --server /etc/engine/server.yaml   # OK 0 definitions
+docker rmi cge-runtime-check
 ```
 (Node 26 here warns about engines `>=22 <23`; harmless.)
 
@@ -229,7 +247,7 @@ git diff 3bbdd4a -- packages/core/src/replay/canonical/golden-vectors.json   # m
 ## Known gaps
 - VC-230 is asserted both on objects (core) and on YAML text (config, iteration 7). Not covered by text tests: a `hooks.module`-only edit (needs the bundle path, iteration 9).
 - VC-275 is fully asserted (compile/hash in core, parse parts in config; measured 1 MiB parse+compile median 379 ms, rejection ~0.001 ms in strict mode). DNFR-002 in the Docker `test` target is measured in iteration 12. `definitionIdentitySchema` is not exported from the package root (relative import from `core/definition`/`replay/canonical`).
-- Server config is done (10); Docker `bundle:games` wiring and `pnpm bundle:games` in the build stage (11), docs (12). `esbuild`, the bundle build, `bundle:games` and the DFR-045 static test are done (iteration 8). `games/` does not exist yet (P8a).
+- Server config (10), sample config, `config:check` and Docker wiring (11) are done; docs (12) remain. `esbuild`, the bundle build, `bundle:games` and the DFR-045 static test are done (iteration 8). `games/` does not exist yet (P8a).
 - Stale docs listed under Current state — Iteration 12.
 
 ## Fixtures: hook games (Iteration 8; `packages/config/fixtures/hook-games/`)

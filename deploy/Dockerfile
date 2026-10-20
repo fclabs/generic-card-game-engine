@@ -29,6 +29,17 @@ FROM base AS build
 
 COPY . .
 RUN pnpm build
+# Bundle hook modules, then stage only game.yaml and dist/ of each game (DFR-081).
+RUN pnpm bundle:games \
+  && mkdir -p /out/games \
+  && for d in games/*/; do \
+    if [ -f "${d}game.yaml" ]; then \
+      n=$(basename "$d"); \
+      mkdir -p "/out/games/$n"; \
+      cp "${d}game.yaml" "/out/games/$n/game.yaml"; \
+      if [ -d "${d}dist" ]; then cp -R "${d}dist" "/out/games/$n/dist"; fi; \
+    fi; \
+  done
 
 FROM build AS test
 
@@ -70,6 +81,9 @@ COPY --from=build /app/packages/adapters/transport-http/dist packages/adapters/t
 COPY --from=build /app/packages/adapters/transport-ws/dist packages/adapters/transport-ws/dist
 COPY --from=build /app/packages/adapters/authz-static/dist packages/adapters/authz-static/dist
 COPY --from=build /app/packages/adapters/timer-host/dist packages/adapters/timer-host/dist
+
+# Game definitions (empty directory when there are no games).
+COPY --from=build /out/games /app/games
 
 RUN pnpm install --prod --frozen-lockfile \
   && rm -rf tools \
