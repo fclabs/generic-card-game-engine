@@ -7,7 +7,16 @@ import type { DefinitionError } from "./errors.js";
 import { createErrorCollector } from "./errors.js";
 import { isValidGameId } from "./ids.js";
 import type { DefinitionLimits } from "./limits.js";
+import { compileCards } from "./cards.js";
+import type { CompiledCards } from "./cards.js";
+import { compileConservationGroups } from "./groups.js";
+import type { CompiledGroups } from "./groups.js";
+import { compileCounters } from "./counters.js";
+import type { CompiledCounters } from "./counters.js";
+import type { ForEachScope } from "./foreach.js";
 import { compileSeats } from "./seats.js";
+import { compileZones } from "./zones.js";
+import type { CompiledZones } from "./zones.js";
 import { has, member, readInteger, readObject, readString } from "./strict.js";
 
 /** Bundle facts the compiler needs (spec §7.3); used from iteration 4. */
@@ -55,10 +64,6 @@ export type SectionKey = (typeof SECTION_ORDER)[number];
  */
 export const UNIMPLEMENTED_SECTIONS: readonly SectionKey[] = [
   "roles",
-  "zones",
-  "cards",
-  "counters",
-  "conservation_groups",
   "control",
   "meta_schemas",
   "roster_reducer",
@@ -72,6 +77,11 @@ const REQUIRED_SECTIONS: readonly SectionKey[] = [
   "action_schema_version",
   "seats",
 ];
+
+const EMPTY_ZONES: CompiledZones = { zones: [], zoneTemplates: [] };
+const EMPTY_CARDS: CompiledCards = { cards: [] };
+const EMPTY_COUNTERS: CompiledCounters = { counters: [] };
+const EMPTY_GROUPS: CompiledGroups = { conservationGroups: [] };
 
 /**
  * Compiles a parsed `game.yaml` value (spec DFR-010). Pure and total: never
@@ -126,11 +136,64 @@ export function compileDefinition(
         seats = compileSeats(c, member(root, "seats"), "seats");
       }
     }
+    // Sections that depend on the seat layout are skipped when it failed:
+    // every reference they made would be reported spuriously.
+    const scope: ForEachScope | undefined =
+      seats === undefined
+        ? undefined
+        : { seats: seats.seats.map((s) => s.id), teams: seats.teams };
+    let zones: CompiledZones | undefined = EMPTY_ZONES;
+    let cards: CompiledCards | undefined = EMPTY_CARDS;
+    let counters: CompiledCounters | undefined = EMPTY_COUNTERS;
+    let groups: CompiledGroups | undefined = EMPTY_GROUPS;
+    if (root !== undefined) {
+      if (has(root, "zones")) {
+        zones =
+          scope === undefined
+            ? undefined
+            : compileZones(c, member(root, "zones"), "zones", scope);
+      }
+      const zoneIds =
+        zones === undefined
+          ? undefined
+          : new Set<string>(zones.zones.map((z) => z.id));
+      if (has(root, "cards")) {
+        cards = compileCards(c, member(root, "cards"), "cards", zoneIds);
+      }
+      if (has(root, "counters")) {
+        counters =
+          scope === undefined
+            ? undefined
+            : compileCounters(c, member(root, "counters"), "counters", scope, {
+                zones: zoneIds,
+                cards:
+                  cards === undefined
+                    ? undefined
+                    : new Set<string>(cards.cards.map((k) => k.id)),
+              });
+      }
+      if (has(root, "conservation_groups")) {
+        groups =
+          scope === undefined
+            ? undefined
+            : compileConservationGroups(
+                c,
+                member(root, "conservation_groups"),
+                "conservation_groups",
+                scope,
+                counters?.counters,
+              );
+      }
+    }
     if (
       c.count > 0 ||
       gameId === undefined ||
       schemaVersion === undefined ||
-      seats === undefined
+      seats === undefined ||
+      zones === undefined ||
+      cards === undefined ||
+      counters === undefined ||
+      groups === undefined
     ) {
       return { ok: false, errors: c.errors(), truncated: c.truncated };
     }
@@ -140,11 +203,11 @@ export function compileDefinition(
       gameId,
       roles: [],
       schemaVersion,
-      cards: [],
-      zones: [],
-      zoneTemplates: [],
-      counters: [],
-      conservationGroups: [],
+      cards: cards.cards,
+      zones: zones.zones,
+      zoneTemplates: zones.zoneTemplates,
+      counters: counters.counters,
+      conservationGroups: groups.conservationGroups,
       seats: seats.seats,
       teams: seats.teams,
       viewKeys: [...GRANTABLE_VIEW_KEYS],

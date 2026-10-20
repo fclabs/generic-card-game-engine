@@ -36,3 +36,31 @@ Append-only. Entry format: `## D-NNN: <title>  (Iteration N)` with Context, Deci
 **Decision.** All 14 top-level keys of §7.1 are accepted (no `SCHEMA_UNKNOWN_KEY`) but a present, not yet implemented section is neither validated nor compiled; its default is used. `UNIMPLEMENTED_SECTIONS` lists them; it shrinks in Iterations 3-4. `compileDefinition` also catches an internal exception and reports it as `INVALID_VALUE` at `""`, to keep the never-throws contract.
 **Rejected.** Rejecting present unimplemented sections (would block fixtures written ahead).
 **Consequences.** Until Iteration 4 a successful compile does not prove those sections are valid.
+
+## D-006: Codes and paths for zone, card, counter and group errors  (Iteration 3)
+
+**Context.** DFR-031 leaves several entity cases unassigned.
+**Decision.** A template named like a fixed zone, or any repeated zone/template/counter/card/group/axis name -> `DUPLICATE_ID` at the later occurrence (`...template` or `...id`). A card metadata field absent from `metadata_schema` -> `INVALID_VALUE` at `...metadata.<f>`; a value of the wrong type -> `SCHEMA_TYPE` (float in `json` -> `SCHEMA_TYPE`; unsafe int, depth > 64, lone surrogate -> `INVALID_VALUE`). A card `zone` that is unknown or names a template -> `UNKNOWN_REFERENCE` at `...zone`, entity = card id. Derived counter declaring `min`/`max`/`initial`/`supply_role` -> `INVALID_VALUE` at that key; `derived` with no `zone_size` and no other fault -> `SCHEMA_MISSING`. `owner_id` missing -> `SCHEMA_MISSING`, forbidden on `table` -> `INVALID_VALUE`. Over-limit: zones/counters `LIMIT_EXCEEDED` at the section path (once, fixed zones only), cards at `cards[i]` (explicit) or `cards[i].generate`; after a card limit hit later entries are not processed. Generated-id faults (charset, duplicate, unknown zone) are reported once per entry and abort it.
+**Rejected.** One error per bad generated card (up to 10 000 identical reports); `SCHEMA_UNKNOWN_KEY` for metadata keys (they are user-named).
+**Consequences.** Tests pin these; iteration 4 follows them for meta schemas.
+
+## D-007: Generator order and placeholder rules  (Iteration 3)
+
+**Context.** DFR-014 fixes first-axis-slowest and lone-placeholder typing.
+**Decision.** Expansion is an odometer over the axis list (last fastest). Placeholders are `{axisName}` only, in `id`, `type`, `zone` and top-level string `metadata` values; nested strings inside `json` values are never substituted. Braces in an explicit (non-generator) card are literal. Metadata types are checked once per entry, statically (lone placeholder vs axis value kinds, mixed template = string). Card `metadataSchema`/`metadataVisibility` are shared objects across one entry's cards.
+**Rejected.** Per-card type checks (10 000x work, duplicate errors); substituting inside nested json.
+**Consequences.** Iteration 5 may rely on `def.cards` order = declaration order, then expansion order.
+
+## D-008: Skip, do not cascade, dependent sections  (Iteration 3)
+
+**Context.** Zone, counter and group checks reference earlier sections.
+**Decision.** A section builder returns `undefined` when it reported errors; dependants receive `undefined` for that reference set and skip those checks. If `seats` failed, `zones`, `counters` and `conservation_groups` (which need the for_each scope) are not validated.
+**Rejected.** Validating against partial results (spurious `UNKNOWN_REFERENCE`).
+**Consequences.** Fixing seats may reveal more errors; each run reports only real faults of validated sections.
+
+## D-009: Visibility pass-through stub and card field maps  (Iteration 3)
+
+**Context.** Plan: visibility blocks are a stub until iteration 4; DFR-014 needs card `metadata_schema` visibility now.
+**Decision.** `compileVisibility(c, raw, path, {kind, entity, owned})` returns `{}` and ignores the block. Card `metadata_schema` is fully validated now through `readFieldMap` (`INVALID_VISIBILITY`), reusable by iteration 4.
+**Rejected.** Reading/validating visibility blocks early; deferring field visibility.
+**Consequences.** Until iteration 4 a bad zone/counter visibility block compiles silently.
