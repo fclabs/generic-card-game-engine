@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 import {
-  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -153,7 +152,15 @@ describe("pnpm config:check CLI (VC-265)", () => {
     const cwd = join(tmp, "default-cwd");
     mkdirSync(join(cwd, "config"), { recursive: true });
     mkdirSync(join(cwd, "games"));
-    cpSync(SAMPLE, join(cwd, "config", "server.yaml"));
+    // /app/games exists inside the Docker test image, so name a path that is
+    // absent everywhere instead of relying on the sample's default.
+    writeFileSync(
+      join(cwd, "config", "server.yaml"),
+      readFileSync(SAMPLE, "utf8").replace(
+        "[/app/games]",
+        `[${join(tmp, "no-such-games")}]`,
+      ),
+    );
     const r = run([], { ENGINE_HOST_KEY: GOOD_KEY }, cwd);
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe("OK 0 definitions");

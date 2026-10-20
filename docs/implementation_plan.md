@@ -36,7 +36,7 @@ For this graph to hold, P1 owns the Rule SPI types (including `Reducer`) and the
 
 ## Phase 0 — Foundation and tooling
 
-**Status:** Done (as built; see `specs/00-phase-0-plan-artifacts/{CONTEXT,DECISIONS}.md`).
+**Status:** Done (as built; see [dev-setup.md](./dev-setup.md) and [workspace-architecture.md](./workspace-architecture.md)).
 
 **Goal:** A buildable, testable, containerised empty workspace with the architectural rules enforced from the first commit, so no later phase can violate them.
 
@@ -61,7 +61,7 @@ For this graph to hold, P1 owns the Rule SPI types (including `Reducer`) and the
 - A deliberate forbidden import (e.g. `core` → `node:fs`) fails CI; a forbidden global (`Date.now`) in `core` fails lint. Both are proven by the guardrail fixtures.
 
 **Known gaps carried forward**
-- `docker compose … up` cannot start `engine` until P2 adds `config/server.yaml`; the runtime `CMD` is a placeholder that exits 0 and there is no `/healthz`/`/readyz` until P7.
+- The runtime `CMD` is a placeholder that exits 0 and there is no `/healthz`/`/readyz` until P7 (the sample `config/server.yaml` arrived with P2).
 - Remote-only CI checks await a real PR (PR-fail-at-lint, stale-lockfile, cache hits, `ubuntu-latest` timings). Branch protection is a repo-admin task.
 - `skipLibCheck: true` in `tsconfig.base.json`. TypeScript is to be revisited once `typescript-eslint` supports TS ≥ 7.
 
@@ -97,6 +97,8 @@ For this graph to hold, P1 owns the Rule SPI types (including `Reducer`) and the
 ---
 
 ## Phase 2 — Game definition and configuration
+
+**Status:** Done (as built; see [game-definitions.md](./game-definitions.md), [game-definition-schema.md](./game-definition-schema.md) and [server-config.md](./server-config.md)).
 
 **Goal:** Turn declarative YAML into validated, compiled, content-addressed definitions the kernel can run, and load server configuration safely.
 

@@ -267,3 +267,24 @@ Append-only. Entry format: `## D-NNN: <title>  (Iteration N)` with Context, Deci
 **Decision.** In the `build` stage a second `RUN pnpm bundle:games && mkdir -p /out/games && for d in games/*/ ...` builds bundles inside the image and stages only `game.yaml` and `dist/` per game under `/out/games`; the `runtime` stage does `COPY --from=build /out/games /app/games` before the read-only `chown/chmod` step. `.dockerignore` is unchanged. `config/.gitkeep` is removed (the directory now holds `server.yaml`; nothing referenced it). The `test` stage inherits the extra build step harmlessly.
 **Rejected.** `COPY --from=build /app/games` (would ship `hooks.ts` sources); editing `.dockerignore`; running `bundle:games` in the runtime stage (needs esbuild and sources).
 **Consequences.** Verified with a throwaway game: only `game.yaml`, `dist/hooks.js`, `dist/hooks.manifest.json` reach the image.
+
+## D-039: Documentation set and the doc test  (Iteration 12)
+
+**Context.** VC-273 asks a test to prove the docs mention every key and code; DFR-082 lists the files. The docs must also be correct, not just complete.
+**Decision.** `packages/config/src/docs.test.ts` (reads `docs/` with `node:fs`) checks: the three new documents exist; `game-definition-schema.md` mentions every top-level and nested key of the schema (as backticked dotted paths, e.g. `` `zones[].max_instances` ``) and every `DEFINITION_ERROR_CODES` member; `server-config.md` every dotted key and every `CONFIG_ERROR_CODES` member and the three `config:check` exit codes; the dev-setup, canonical-profile, workspace-architecture, troubleshooting and README mentions; no document names the removed flags or points at planning artifacts. Both examples are executed: the YAML under `## Worked example` is parsed and compiled with a bundle that exports every referenced name, and the YAML under `## Example` of the server doc is loaded with a valid key. Headings `## Worked example` and `## Example` are therefore load-bearing. The reference docs are organised by reader need; the "works this way because" section of `game-definitions.md` carries the decisions that still bind a reader.
+**Rejected.** Checking prose snippets only for substrings (an example that drifted from the schema would pass); linking the docs to `specs/`.
+**Consequences.** Adding a schema key or error code without documenting it fails the test. `docs/implementation_plan.md` lost two `specs/00-...` / stale "cannot start engine" mentions so that `grep "02-phase-2\|plan-artifacts" docs README.md` is empty.
+
+## D-040: Business-rule test names and honest coverage  (Iteration 12)
+
+**Context.** DNFR-006: each `DBR` needs a failing-path test whose name contains its id; coverage thresholds. Only DBR-005 had its id in a describe title.
+**Decision.** `business-rules.test.ts` holds one `it("DBR-nnn ...")` per rule (eleven), each exercising the public API on the failing path (identity changes, frozen-input purity, strictness, fail-closed visibility, a never-executed throwing bundle, ceilings, secret redaction, reserved names, dependency shape with mutated copies, SHA-256 pins of the three P1 golden files equal to `3bbdd4a`, registry hash mismatch). `dbr-names.test.ts` scans every `*.test.ts` under `packages/` for `it(`/`test(` titles and fails unless all eleven ids appear, printing the table. Coverage uses the existing `pnpm test:coverage` (no config change). Because v8 only reports loaded files, `config-check.ts` was invisible; in-process `config-check-run.test.ts` now covers it. With every file forced into the report (`--coverage.include`) `packages/config/src` is 92 %; the two entry scripts `cli.ts` and `bundle-games.ts` stay covered only by child-process tests.
+**Rejected.** A new root script for the DBR listing (would need a `dev-setup.md` row and adds nothing a test does not); changing `vitest.config.ts` coverage include.
+**Consequences.** Renaming a `DBR` test title without its id fails `dbr-names.test.ts`.
+
+## D-041: Two test fixes found by the Docker run  (Iteration 12)
+
+**Context.** The first real Docker run of the iteration 11 tests, and coverage instrumentation, exposed two environment dependencies (no production change).
+**Decision.** (1) The `config:check` "default search path absent" child-process test used the sample config's `/app/games`, which exists inside the Docker test image (the repo's `games/` is copied there); it now writes a config naming a path under its temp directory. (2) The 1 MiB parse+compile test gets a 60 s test timeout (the 2 s bound assertion is unchanged) because coverage instrumentation under a busy worker pool exceeded vitest's 5 s default.
+**Rejected.** Removing `games/` from the image; raising the bound.
+**Consequences.** `docker compose ... run --rm tests` reuses an existing image: run `docker compose -f deploy/docker-compose.test.yml build` (or `run --build`) first, otherwise it tests the previous sources.

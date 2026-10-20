@@ -17,11 +17,12 @@ This page explains what the kernel is for, how to call it, what it guarantees an
 | Identity of a state | `stateDigest(definition, state)`, `canonicalize`, `sha256Hex` |
 | Randomness as data | `createPrng`, `uniform`, `shufflePermutation` |
 | Game data model | `CompiledGameDefinition` and `assertDefinitionStructure` |
+| Compiling and identifying a definition | `compileDefinition`, `definitionContentHash`, `hookBundleHash`, `computeDefinitionId` (see [game-definitions.md](./game-definitions.md)) |
 | Rule extension points (types only) | `core/spi`: hooks, reducers, effects |
-| Infrastructure contracts (types only) | `core/ports`: store, ledger, authorization, lease, publisher, timers |
+| Infrastructure contracts (types only) | `core/ports`: store, ledger, authorization, lease, publisher, timers, definition registry |
 | Helpers | `validateAction`, `maskGates`, `nextZoneId`, `ratioRound` |
 
-The kernel does not parse YAML, compile definitions, run hooks, project views, store anything or talk to a network. It defines the data types and the transition function those layers are built on.
+The kernel does not parse YAML, run hooks, project views, store anything or talk to a network. It defines the data types and the transition function those layers are built on. The definition compiler (`compileDefinition`) and the identity hashes are part of `@cge/core` because they are pure; reading files, parsing YAML, bundling hooks and loading definitions from disk live in `@cge/config` (see [game-definitions.md](./game-definitions.md)).
 
 ## Using it
 
@@ -42,7 +43,7 @@ function must<T>(result: Result<T>): T {
 
 ### A definition
 
-A `CompiledGameDefinition` is plain data plus three kinds of function-valued members (derived-counter evaluators, meta reducers, a roster reducer). Until the definition compiler exists, definitions are built in code:
+A `CompiledGameDefinition` is plain data plus three kinds of function-valued members (derived-counter evaluators, meta reducers, a roster reducer). Real definitions come from `compileDefinition` applied to a parsed `game.yaml` ([game-definition-schema.md](./game-definition-schema.md)); the compiler installs the derived-counter evaluators and records reducers only by name (`reducerRef`, `rosterReducerRef`). The examples on this page build a definition in code instead:
 
 ```ts
 const deck = must(zoneId("deck"));
@@ -52,14 +53,24 @@ const score = must(counterId("score"));
 const cards = ["c1", "c2", "c3"].map((id) => must(cardId(id)));
 
 const definition: CompiledGameDefinition = {
+  gameId: "demo",
+  roles: [],
   schemaVersion: 1,
-  cards: cards.map((id) => ({ id, metadataSchema: {}, startingZone: deck })),
+  cards: cards.map((id) => ({
+    id,
+    metadataSchema: {},
+    startingZone: deck,
+    initialMetadata: {},
+    metadataVisibility: {},
+  })),
   zones: [
-    { id: deck, ordered: true },
-    { id: hand, ordered: true },
+    { id: deck, ordered: true, visibility: {} },
+    { id: hand, ordered: true, visibility: {} },
   ],
   zoneTemplates: [],
-  counters: [{ id: score, owner: "table", min: 0n, initial: 0n }],
+  counters: [
+    { id: score, owner: "table", min: 0n, initial: 0n, visibility: {} },
+  ],
   conservationGroups: [],
   seats: [{ id: north }],
   teams: [],
@@ -171,7 +182,7 @@ Behaviours worth knowing before writing a caller:
 - **Conservation groups** are checked once at the end of the batch, so a transient imbalance between two actions is legal. A group's sum may change only through `counter_adjust` on a member with a `supply_role`. The direction of mint and burn is not enforced.
 - **Zone templates.** Zone ids are derived as `<template>/<ownerToken>/<ordinal>` (`ownerToken` is the owner id, or `_` for an ownerless template) and are never reused. `maxInstances` counts the live zones of a template across all owners. `nextZoneId(state, template, owner, pending)` returns the id a `zone_create` will receive, so later actions in the same batch can target it.
 - **Grants** get the id `grant/<seq+1>/<i>`, where `i` is the index in the committed primitive list; replaying the committed list as one batch reproduces ids. The kernel stores and expires grants; giving them meaning when a view is projected is later work. Only single-card, single-zone and top-of-zone targets are accepted.
-- **Roster reducers.** `join`, `leave`, `substitute` and `set_status` are handled by a reducer the definition supplies; the kernel validates its output. A roster reducer receives the whole `roster` action as its payload and may only return a new `roster` partition. Without a roster reducer these four operations are `MALFORMED_ACTION`. `delegate` and `revoke_delegation` need no reducer.
+- **Roster reducers.** `join`, `leave`, `substitute` and `set_status` are handled by a reducer the definition supplies; the kernel validates its output. A roster reducer receives the whole `roster` action as its payload and may only return a new `roster` partition. Without a roster reducer these four operations are `MALFORMED_ACTION`, unless the definition declares one by name (`rosterReducerRef`) that is not bound yet, which is `REDUCER_ERROR`. `delegate` and `revoke_delegation` need no reducer.
 - **Control.** `control_advance` walks the turn order, counting only seats whose status is `seated`; `mode: "until_quiescent"` is not supported. `control_set` validates phase and seats but does not check pointer names against the declared names.
 - **Lifecycle.** `active -> completed`, `active -> terminated` and `completed -> terminated` are the only transitions. A `lifecycle` action must be the last action of its batch. On a `completed` session the only admitted batch is exactly `[lifecycle(terminated)]`; on a `terminated` session every batch, including `[]`, fails with `SESSION_ENDED`. A successful result carries one `SessionEnded` notification per lifecycle action; the final outcome is also readable from `state.outcome`.
 - **Empty batches.** On an active session, `[]` (or macros that expand to nothing) succeeds, returns the input state itself and does not advance `seq`.
@@ -225,7 +236,7 @@ What can still throw is limited to programmer errors: an invalid argument to `un
 |--------|------|
 | `errors/` | `ErrorCode`, `EngineError`, `GameRejection`, `Result` |
 | `session/` | ids, snapshots, state types, `createSession`, `apply`, PRNG, action validation, `maskGates`, `nextZoneId`, `ratioRound` |
-| `definition/` | `CompiledGameDefinition`, `assertDefinitionStructure`, `definitionData` |
+| `definition/` | `CompiledGameDefinition`, `assertDefinitionStructure`, `definitionData`, the compiler (`compileDefinition`, `definitionNeedsBundle`, error codes and limits) and the identity hashes |
 | `replay/canonical/` | canonical JSON, schemas, SHA-256, `stateDigest`, golden vectors |
 | `spi/` | rule SPI types |
 | `ports/` | port interfaces |
@@ -249,7 +260,7 @@ Keyed collections in state are plain records, not `Map`/`Set`, so canonicalisati
 
 ### Reducers
 
-A reducer is `(partition, payload) => S`, synchronous. A `meta` reducer owns `state.meta[schema_id]` and receives the action's payload; the roster reducer owns `state.roster` and receives the whole action. The kernel deep-freezes the payload, calls the reducer inside a try/catch, copies the return value into detached plain data, canonicalizes it under the partition's schema (floats, functions, cycles, `Map`/`Date`, undeclared fields and wrong types all fail), checks the partition's shape, verifies that nothing outside the partition changed, writes it and then re-checks the whole state. Any failure is `REDUCER_ERROR`. A roster reducer's output is a detached copy, so unchanged seat entries are new objects (the `roster` member is always a new reference after a roster action).
+A reducer is `(partition, payload) => S`, synchronous. A compiled definition names its reducers (`reducerRef` on each meta schema, `rosterReducerRef`) and the function itself is bound onto the definition value before `apply`; a `meta` action for a declared schema whose function is not bound, and a `roster` operation when `rosterReducerRef` is declared but unbound, fail with `REDUCER_ERROR` (`reducer not bound: <ref>`), while an undeclared `schema_id` stays `MALFORMED_ACTION`. A `meta` reducer owns `state.meta[schema_id]` and receives the action's payload; the roster reducer owns `state.roster` and receives the whole action. The kernel deep-freezes the payload, calls the reducer inside a try/catch, copies the return value into detached plain data, canonicalizes it under the partition's schema (floats, functions, cycles, `Map`/`Date`, undeclared fields and wrong types all fail), checks the partition's shape, verifies that nothing outside the partition changed, writes it and then re-checks the whole state. Any failure is `REDUCER_ERROR`. A roster reducer's output is a detached copy, so unchanged seat entries are new objects (the `roster` member is always a new reference after a roster action).
 
 ### Why the canonical order is schema-defined
 
@@ -274,7 +285,7 @@ These are choices the kernel makes where the surrounding documents left room. Ca
 - Derived counters may not appear in conservation groups, and a derived counter cannot be adjusted or transferred.
 - A roster that omits a declared seat is accepted from a reducer only if nothing (control, delegations, gates) still names that seat.
 - Engine payloads (`engine.*`) must carry exactly the documented fields. `engine.gate_submit` from a seat outside `expectedSeats` is `GATE_CLOSED`, including a seat that does not exist.
-- Initial state: cards start `face_down` with empty metadata, `meta` partitions start as `{}`, control pointers are empty and the direction is `1`. A definition that wants face-up cards flips them with setup actions.
+- Initial state: cards start `face_down` with the metadata of their `initialMetadata` (empty unless the definition declares some), zones take their `owner` from the definition, `meta` partitions start as `{}`, control pointers are empty and the direction is `1`. A definition that wants face-up cards flips them with setup actions.
 - `createSession` copies every array it takes; it never freezes or aliases the definition's data.
 - Hook and port payloads carry no timestamps. `Effect.timer_request.duration_hint` is a host hint: effects are not state, are never logged and are never read by `apply`.
 - Rule hooks receive a `GateMaskedSnapshot` (`maskGates` output), never the raw state, so sealed submissions are not exposed to hook code.
@@ -284,7 +295,7 @@ These are choices the kernel makes where the surrounding documents left room. Ca
 `core/spi` and `core/ports` are types only; their emitted JavaScript is empty. They are the contracts the later layers implement.
 
 - **SPI**: `ValidationHook<K>`, `ReactionHook`, `GateResolveHook`, `AuthorizationHook` (all asynchronous), `Reducer<S>` (synchronous), the verdict types `Accept`/`Reject` (rejection is a `GameRejection`) and `Allow`/`Deny`, `Effect` (`timer_request`), `Proposal<K>`, `GateMaskedSnapshot`, `SealedBySeat`, and `AbortSignalLike`, a structural stand-in for the host's `AbortSignal` (core has no DOM or Node types, and a real `AbortSignal` is assignable to it).
-- **Ports**: `SessionStore` (`commit`, `load`, `list`), `IdempotencyLedger`, `AuthorizationPort` (with the `AuthOp` union), `LeasePort`, `HookRunner`, `Publisher`, `TimerPort`, and the payload types `Transaction`, `Receipt`, `OutboxRow`, `Lease`, `CommitResult`, `StoredSession`, `SessionSummary`, `CommittedTransaction`. `commit` is atomic over actions, receipt and outbox rows, fails with `STALE_WRITER` when the expected sequence or epoch does not match (returned as a value; infrastructure faults reject the promise), and supports an empty accepted batch with `seq = null`. `load` returns the initial state plus a log, so replay is `initial` plus `log`. Receipts and outbox rows carry no `committed_at` or `published_at`; adapters own operational metadata. There is no session-creation method and no definition registry port yet.
+- **Ports**: `SessionStore` (`commit`, `load`, `list`), `IdempotencyLedger`, `AuthorizationPort` (with the `AuthOp` union), `LeasePort`, `HookRunner`, `Publisher`, `TimerPort`, and the payload types `Transaction`, `Receipt`, `OutboxRow`, `Lease`, `CommitResult`, `StoredSession`, `SessionSummary`, `CommittedTransaction`. `commit` is atomic over actions, receipt and outbox rows, fails with `STALE_WRITER` when the expected sequence or epoch does not match (returned as a value; infrastructure faults reject the promise), and supports an empty accepted batch with `seq = null`. `load` returns the initial state plus a log, so replay is `initial` plus `log`. Receipts and outbox rows carry no `committed_at` or `published_at`; adapters own operational metadata. There is no session-creation method. `core/ports` also holds `DefinitionRegistry` (`resolve(DefinitionId)`), implemented by the filesystem adapter in `@cge/config` (see [game-definitions.md](./game-definitions.md#the-registry)).
 
 ## Limits and troubleshooting
 
@@ -294,7 +305,7 @@ These are choices the kernel makes where the surrounding documents left room. Ca
 - **Derived-counter evaluators are trusted code.** An evaluator must be pure, return a `bigint` and tolerate any valid state. `apply` never evaluates derived counters; `stateDigest` does, and an evaluator that throws or returns something else makes it throw a plain `Error` (not a `CanonicalError`). Evaluators receive the whole snapshot, including `id`.
 - **`apply` does not verify that its input state is frozen.** A state not produced by `createSession` or `apply` (a hand-built object) is a programmer error and its behaviour is undefined. Build test states by cloning and re-freezing.
 - **`seq` is a safe integer.** A commit that would pass `Number.MAX_SAFE_INTEGER` throws a `RangeError`.
-- **Definition checks are structural.** `assertDefinitionStructure` does not check duplicate zone-template names, duplicate meta schema ids or conservation group ids, or sensible `maxInstances`; a definition has no identity field yet.
+- **Definition checks are structural.** `assertDefinitionStructure` does not check duplicate zone-template names, duplicate meta schema ids or conservation group ids, or sensible `maxInstances`. A definition from `compileDefinition` has had those checks made with paths; a hand-built one has not. Its identity is `definitionContentHash` / `DefinitionId`, computed from the data and the hook bundle, not stored in the definition.
 - **Pointer names are not enforced.** `control_set` accepts any pointer name, and duplicate or empty `active_seats` lists are not rejected beyond seat existence.
 - **No gate quorum, timeouts or nested gates.** Gates are open, submit, retract, resolve. Submission payloads are opaque canonical JSON.
 - **No engine-side roster defaults.** `join` and `leave` do not instantiate counters or zones; a roster reducer that writes anything outside the roster is a `REDUCER_ERROR`.
@@ -306,7 +317,7 @@ These are choices the kernel makes where the surrounding documents left room. Ca
 
 | Phase | Builds on the kernel by |
 |-------|-------------------------|
-| P2 | Compiling YAML into `CompiledGameDefinition` (the kernel's data types are the compiler target), content identity, a definition registry port, load-time errors, deciding whether to enforce pointer names |
+| P2 (shipped) | Compiling YAML into `CompiledGameDefinition`, content identity, the definition registry port and filesystem adapter, load-time errors, server configuration: see [game-definitions.md](./game-definitions.md). Deciding whether to enforce pointer names is still open |
 | P3 | Projecting state into role-specific views (using `maskGates` and grants), replay and fork on top of `apply` and the canonical module, the package format |
 | P4 | Running hooks behind the SPI types, with timeouts and cost budgets |
 | P5 | Implementing the store, ledger and related ports |

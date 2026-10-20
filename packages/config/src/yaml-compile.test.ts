@@ -146,7 +146,7 @@ describe("VC-275 parse parts (DNFR-003)", () => {
       `VC-275 1 MiB parse+compile: median ${median.toFixed(1)} ms (cards: ${String(compileText(text).cards.length)}; bound ${String(2000 * factor)} ms)`,
     );
     expect(median).toBeLessThanOrEqual(2000 * factor);
-  });
+  }, 60_000);
 
   it("1 MiB + 1 byte fails YAML_TOO_LARGE within 50 ms", () => {
     const text = megabyteDefinition(1_048_576) + " ";

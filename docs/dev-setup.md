@@ -62,7 +62,7 @@ Containerised full suite (build `test` stage, run unit + guardrails):
 docker compose -f deploy/docker-compose.test.yml run --rm tests
 ```
 
-Expected: exit 0; Vitest reports the unit suite, then the guardrail suite.
+Expected: exit 0; Vitest reports the unit suite, then the guardrail suite. Inside the test image the performance bounds are strict. `run` reuses an image built earlier and does not rebuild it: after changing sources run `docker compose -f deploy/docker-compose.test.yml build` first (or add `--build` to `run`), otherwise the old sources are tested.
 
 Runtime compose file (service `engine`). Validate without starting:
 
@@ -72,13 +72,42 @@ docker compose -f deploy/docker-compose.yml config
 
 Expected: exit 0; output defines service `engine`, target `runtime`, port 8080, volume `engine-data`, env `ENGINE_HOST_KEY`.
 
-To start the service (when a host config file exists):
+To start the service:
 
 ```sh
+export ENGINE_HOST_KEY=0123456789abcdef   # 16 to 256 characters; the sample config reads it
 docker compose -f deploy/docker-compose.yml up
 ```
 
-`config/server.yaml` is present and reads the key from `ENGINE_HOST_KEY` (export it in the shell before `up`).
+`config/server.yaml` is mounted read-only at `/etc/engine/server.yaml`. Compose passes an unexported `ENGINE_HOST_KEY` as an **empty string**, which the configuration loader rejects (see [server-config.md](./server-config.md)); the image itself still runs a placeholder server entry (see [troubleshooting.md](./troubleshooting.md)).
+
+The runtime image holds `/app/games` (each game's `game.yaml` and built `dist/`, empty when `games/` has no games). The `build` stage runs `pnpm bundle:games` after `pnpm build`; host `dist/` directories are never copied into the build context.
+
+### Game definitions and server configuration
+
+Two scripts work with the files a game author and an operator write ([game-definitions.md](./game-definitions.md), [server-config.md](./server-config.md)):
+
+```sh
+# Build every games/<id>/dist/hooks.js (+ manifest) whose game.yaml sets hooks.module.
+pnpm bundle:games                    # exit 0 when there are no games; exit 1 names each failing game
+pnpm bundle:games path/to/games      # another games root
+
+# Validate config/server.yaml and every game under its search paths, as the server will load them.
+export ENGINE_HOST_KEY=0123456789abcdef
+pnpm config:check                                   # prints "OK <n> definitions", exit 0
+pnpm config:check --server path/to/server.yaml      # another server config
+pnpm config:check --games games other/games         # check these game directories instead
+```
+
+`config:check` exit codes: `0` valid, `1` validation errors (one `<path>: <code>: <detail>` line each on stderr), `2` bad command line. Without `ENGINE_HOST_KEY` it fails with `ENV_MISSING`. On a machine without `/app/games` it warns on stderr, skips that search path and checks `./games` instead (see [server-config.md](./server-config.md#checking-a-configuration-pnpm-configcheck)). Neither script ever executes hook code.
+
+Run a single package's tests, with the strict performance bounds that Docker applies:
+
+```sh
+pnpm build && CGE_PERF_STRICT=1 pnpm exec vitest run packages/config packages/core/src/definition
+```
+
+Coverage: `pnpm test:coverage` writes `coverage/` and prints a per-folder table. Entry scripts that only run as child processes (`cli.ts`, `bundle-games.ts`) do not appear in it unless included explicitly (`--coverage.include='packages/config/src/**'`).
 
 ### Handy one-liners
 

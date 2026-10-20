@@ -116,9 +116,42 @@ Details that matter when reimplementing the schema:
 - Field types a definition may declare for metadata and meta fields are `string`, `int`, `bool` and `json`.
 - An action payload has no canonical schema in this version. Committed actions are compared structurally, not by canonical bytes.
 
-## Compiled definition data
+## Definition identity
 
-The data part of a `CompiledGameDefinition` has its own schema, used to check that a definition is serialisable. Function-valued members are not data and are never canonicalized: derived-counter evaluators, meta reducers and the roster reducer. `definitionData(definition)` replaces them with the booleans `derived`, `hasReducer` and `hasRosterReducer`. Reducers and evaluators are always resolved from the definition value passed to `apply` or `stateDigest`, never from serialised data.
+A game definition is identified by hashes built with this same profile; they are what replay packages bind to. Three schemas are involved. The data being hashed is `definitionData(definition)`: every data member of a `CompiledGameDefinition` and **no function**. The function-valued members (derived-counter evaluators, meta reducers and the roster reducer) are not data and never appear; identity carries only their declarations (`derivedSpec`, `reducerRef`, `rosterReducerRef`), so binding the functions later never changes a hash. Reducers and evaluators are always resolved from the definition value passed to `apply` or `stateDigest`, never from serialised data.
+
+```ts
+definitionContentHash(def)                 // sha256Hex(canonicalize(definitionIdentitySchema, definitionData(def)))
+hookBundleHash(jsBytes, exports)           // sha256Hex(canonicalize(bundleIdentitySchema, { js: sha256Hex(jsBytes), exports }))
+computeDefinitionId(contentHash, bundleHash?)  // "sha256:" + sha256Hex(canonicalize(idIdentitySchema, { contentHash, bundleHash? }))
+```
+
+`bundleIdentitySchema` is `object([[js, string], [exports, array(string)]])`; the export names are sorted (UTF-16 order) and de-duplicated before hashing. `idIdentitySchema` is `object([[contentHash, string], [bundleHash, optional(string)]])`; with no bundle the `bundleHash` key is absent, so a definition without a bundle never shares an id with one that has an empty bundle. The id is `sha256:` plus 64 lower-case hex characters. These functions are exported from `@cge/core`; the two small schemas live in `definition/identity.ts`.
+
+### `definitionIdentitySchema`
+
+Defined in `packages/core/src/replay/canonical/definition-schema.ts` (module-level; not exported from the package root, because consumers hash through `definitionContentHash`). It is the root object below, **in this field order**. Fields added after the first version of the schema are appended at the end of their record, which is why `gameId` and `roles` come last at the top level.
+
+| # | Field | Node |
+|---|-------|------|
+| 1 | `schemaVersion` | `int` |
+| 2 | `cards` | `array` of `{ id, type?, metadataSchema, startingZone, initialMetadata, metadataVisibility }`: `string`, optional `string`, `idMap` of `string`, `string`, `idMap` of `json`, `idMap` of `string` |
+| 3 | `zones` | `array` of `{ id, ordered, owner?, visibility }`: `string`, `bool`, optional `string`, `idMap` of `string` |
+| 4 | `zoneTemplates` | `array` of `{ name, ownerRule, ordered, maxInstances, visibility }`: `string`, `string`, `bool`, `int`, `idMap` of `string` |
+| 5 | `counters` | `array` of `{ id, owner, min, max?, initial, scale?, rounding?, supplyRole?, ownerId?, visibility, derivedSpec? }`: `string`, `string`, `bigint`, optional `bigint`, `bigint`, optional `int`, optional `string`, optional `string`, optional `string`, `idMap` of `string`, optional `{ kind, zone }` of `string` |
+| 6 | `conservationGroups` | `array` of `{ id, counters }`: `string`, `array` of `string` |
+| 7 | `seats` | `array` of `{ id, team? }` |
+| 8 | `teams` | `array` of `string` |
+| 9 | `viewKeys` | `array` of `string` |
+| 10 | `control` | `{ phases, initialPhase, turnOrder, initialActiveSeats, pointerNames, enforceActiveSeats, outOfTurnKinds }` |
+| 11 | `metaSchemas` | `array` of `{ id, fields, reducerRef, fieldVisibility }`: `string`, `idMap` of `string`, `string`, `idMap` of `string` |
+| 12 | `policies` | `{ cascadeCap, costBudgets }`: `int`, `idMap` of `int` |
+| 13 | `hookBindings` | `idMap` of `array` of `string` |
+| 14 | `gameId` | `string` |
+| 15 | `roles` | `array` of `{ id, subject }` |
+| 16 | `rosterReducerRef` | optional `string` |
+
+Sequences (cards, seats, zones, hook lists) keep their order, which is therefore semantic; `idMap` collections are sorted. Optional members are absent, never `undefined`. A definition produced by `compileDefinition` has already passed this schema, so hashing it never throws; a hand-built definition outside the profile (a float in `initialMetadata`, a lone surrogate) throws `CanonicalError`. The schema is frozen like the rest of the profile: any change to a field, its type or its order changes every definition id, and the committed expected hashes next to the tests pin it. The identity schema does not appear in the session-state digest; `stateDigest` still uses only the session state schema above.
 
 ## Golden vectors
 
