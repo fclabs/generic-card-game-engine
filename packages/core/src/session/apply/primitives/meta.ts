@@ -21,11 +21,18 @@ export function applyMeta(
     return applyEngineAction(ctx, action);
   }
   const decl = ctx.def.metaSchemas.find((m) => m.id === action.schema_id);
-  const reducer = decl?.reducer;
-  if (decl === undefined || reducer === undefined) {
+  if (decl === undefined) {
     return ctx.fail(
       "MALFORMED_ACTION",
       `unregistered meta schema_id: ${action.schema_id}`,
+      ctx.path(".schema_id"),
+    );
+  }
+  const reducer = decl.reducer;
+  if (reducer === undefined) {
+    return ctx.fail(
+      "REDUCER_ERROR",
+      `reducer not bound: ${decl.reducerRef}`,
       ctx.path(".schema_id"),
     );
   }

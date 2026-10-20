@@ -20,7 +20,7 @@ import { cloneData, variant } from "../../session/state.testing.js";
 import type { Snapshot } from "../../session/snapshot.js";
 import type { SessionState } from "../../session/state.js";
 import { canonicalize } from "./canonicalize.js";
-import { definitionDataSchema } from "./definition-schema.js";
+import { definitionIdentitySchema } from "./definition-schema.js";
 import { canonicalStateBytes, stateDigest } from "./state-schema.js";
 
 function must<T>(r: { ok: true; value: T } | { ok: false; error: unknown }): T {
@@ -79,6 +79,7 @@ describe("VC-058 derived counters", () => {
         {
           id: must(counterId("d")),
           owner: "table",
+          visibility: {},
           min: 0n,
           initial: 0n,
           derived: () => 1 as unknown as bigint,
@@ -93,6 +94,7 @@ describe("VC-058 derived counters", () => {
         {
           id: must(counterId("d")),
           owner: "table",
+          visibility: {},
           min: 0n,
           initial: 0n,
           derived: () => {
@@ -322,10 +324,12 @@ describe("VC-063 digest changes with each field", () => {
 describe("VC-089 canonicalize of the definition's data portion", () => {
   it("succeeds and serialises no function member", () => {
     const d = buildDefinition();
-    const t = text(canonicalize(definitionDataSchema, definitionData(d)));
-    expect(t).toContain('"derived":true');
-    expect(t).toContain('"hasReducer":true');
-    expect(t).toContain('"hasRosterReducer":true');
+    const t = text(canonicalize(definitionIdentitySchema, definitionData(d)));
+    expect(t).toContain('"derivedSpec"');
+    expect(t).toContain('"reducerRef":"identity"');
+    expect(t).toContain('"rosterReducerRef":"identity"');
+    expect(t).not.toContain('"hasReducer"');
+    expect(t).not.toContain('"hasRosterReducer"');
     expect(t).toContain('["on-move"]');
     expect(t).not.toContain("=>");
     expect(t).not.toContain("function");
@@ -333,7 +337,7 @@ describe("VC-089 canonicalize of the definition's data portion", () => {
   it("also fits the floor definition", () => {
     expect(() =>
       canonicalize(
-        definitionDataSchema,
+        definitionIdentitySchema,
         definitionData(buildFloorDefinition()),
       ),
     ).not.toThrow();

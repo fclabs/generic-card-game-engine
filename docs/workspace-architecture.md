@@ -27,7 +27,7 @@ Dependency rule (short form used everywhere):
 Edges are expressed three ways so they fail early and consistently:
 
 1. TypeScript `references` (illegal imports fail `pnpm build`)
-2. `package.json` `dependencies` using `workspace:*` `@cge/*` only (no npm runtime deps in the foundation)
+2. `package.json` `dependencies` using `workspace:*` `@cge/*` only, with one deliberate exception: `packages/config` also has the npm runtime dependencies `yaml`, `zod` and `esbuild`, each at an exact version (`packages/core` has no `dependencies` at all)
 3. `dependency-cruiser` named rules (path **or** `@cge/*` specifier, including relative paths into another package’s `src`/`dist`)
 
 Intra-package imports use relative paths ending in `.js` (NodeNext ESM), never `@cge/<self>`.
@@ -50,20 +50,37 @@ Rules are implemented in a local plugin (`eslint/cge-plugin.mjs`) with exact ids
 
 ## `packages/core` contents
 
-`packages/core` is the domain kernel (see [domain-kernel.md](./domain-kernel.md)). It is the only package allowed to hold source code beyond a placeholder export; the skeleton-purity repository invariant still applies to every other package.
+`packages/core` is the domain kernel (see [domain-kernel.md](./domain-kernel.md)). Together with `packages/config` (next section) it is the only package allowed to hold source code beyond a placeholder export; the skeleton-purity repository invariant still applies to every other package.
 
 | Folder under `src/` | Contents |
 |---------------------|----------|
 | `errors/` | `ErrorCode` union and `ERROR_CODES`, `EngineError`, `GameRejection`, `Result`, `ok` / `err` |
 | `session/` | branded ids and guards, `Snapshot` / `deepFreeze`, state types, `createSession`, `maskGates`, `nextZoneId`, `ratioRound`, the seeded PRNG, action and macro types with `validateAction`, and `apply/` (the pipeline: admission, validation, expansion, `primitives/`, reducers, invariants, conservation, commit) |
-| `definition/` | `CompiledGameDefinition` and its part types, `assertDefinitionStructure`, `definitionData` |
+| `definition/` | `CompiledGameDefinition` and its part types, `assertDefinitionStructure`, `definitionData`; `compile/` (the pure `game.yaml` compiler: `compileDefinition`, one module per section, strict readers, the error collector and `DEFINITION_ERROR_CODES`, limits, `definitionNeedsBundle`); `identity.ts` (`definitionContentHash`, `hookBundleHash`, `computeDefinitionId`); `identity-expected.json` and `fixtures/floor-definition.json` (committed hashes and the performance-floor fixture). See [game-definitions.md](./game-definitions.md) |
 | `replay/canonical/` | `canonicalize`, `CanonicalSchema`, `CanonicalError`, `stateDigest`, pure-TypeScript SHA-256 and `golden-vectors.json` (see [canonical-json-profile.md](./canonical-json-profile.md)); `replay/index.ts` re-exports it |
 | `spi/` | rule SPI types only |
-| `ports/` | port interfaces and payload types only |
+| `ports/` | port interfaces and payload types only, including `DefinitionRegistry`, `RegistryError` and `DefinitionSummary` (interface-only: its emitted JavaScript is empty) |
 | `visibility/` | reserved for the projection layer; still an empty module |
 | `util/` | internal helpers (UTF-8 encoder), not exported from the package |
 
-Conventions inside the package: unit tests are `*.test.ts` next to the source; shared test builders and generators are `*.testing.ts` (excluded from the production `tsconfig.json`, compiled only by `tsconfig.test.json`, subject to the determinism lint and never exported from an index); committed fixtures (`golden-vectors.json`, `prng-vectors.json`, `golden-stream.json`) sit beside the tests that assert them. A few tests read `packages/core/dist` (the emitted `spi` and `ports` JavaScript) and so rely on the build that `pnpm test` runs first. `packages/core/package.json` has no runtime `dependencies`, and only `fast-check` and `vitest` as exact-pinned `devDependencies`.
+Conventions inside the package: unit tests are `*.test.ts` next to the source; shared test builders and generators are `*.testing.ts` (excluded from the production `tsconfig.json`, compiled only by `tsconfig.test.json`, subject to the determinism lint and never exported from an index); committed fixtures (`golden-vectors.json`, `prng-vectors.json`, `golden-stream.json`) sit beside the tests that assert them. A few tests read `packages/core/dist` (the emitted `spi` and `ports` JavaScript, and a child process that recompiles a definition in a second Node process) and so rely on the build that `pnpm test` runs first. `packages/core/package.json` has no runtime `dependencies`, and only `fast-check` and `vitest` as exact-pinned `devDependencies`.
+
+## `packages/config` contents
+
+`packages/config` is the Node-side companion of the kernel: everything that touches files, YAML, the bundler or the environment. It may import `@cge/core` and `node:*` (its `tsconfig.json` sets `types: ["node"]`; `packages/core` keeps `types: []`). It never executes a hook bundle: a static test scans its sources (and the compiler's) for dynamic import, `require`, `eval`, `new Function` and `vm`.
+
+| Module under `src/` | Contents |
+|---------------------|----------|
+| `yaml.ts` | `parseYaml`: safe YAML 1.2 intake with size, alias, duplicate-key and forbidden-feature rules |
+| `bundle.ts`, `bundle-games.ts` | `buildHookBundle`, `bundleGames` (esbuild, deterministic options) and the `bundle:games` entry script |
+| `registry.ts` | `createFilesystemDefinitionRegistry`: loads every game under the search paths, resolves a `DefinitionId` and re-verifies it on every call |
+| `server-config.ts` | `loadServerConfig` (YAML, `${ENV}` interpolation, `zod` validation, cross-field rules), `redactServerConfig`, `definitionLimitsFromConfig` |
+| `config-check.ts`, `cli.ts` | `runConfigCheck` (argument handling, output and exit codes as data) and the `config:check` entry, the only file that reads `process.env` |
+| `registry-contract.testing.ts`, `perf-fixture.testing.ts` | Test-only: the adapter-agnostic registry contract suite and the generator of a 20-game search path (excluded from the production `tsconfig.json`, never exported) |
+
+`fixtures/` holds inert data: the floor-definition YAML, equivalence pairs, hook-bundle fixture games and a seeded violation for the static test. `.prettierignore`, the ESLint ignores and the dependency-cruiser excludes list `packages/config/fixtures/**`, because fixture games contain `.ts` sources that must not be linted or cruised. Fixture games are copied to a temporary directory before building, so no `dist/` appears in the tree. Documentation tests (`docs.test.ts`) read `docs/` and the sample `config/server.yaml` with `node:fs`.
+
+The runtime dependencies are `yaml`, `zod` and `esbuild`, each at an exact version. They are pinned because a version change can change behaviour that is part of identity (an `esbuild` upgrade can change bundle bytes and therefore every `DefinitionId` that has a bundle).
 
 ## Build-first commands and `dist`-only exports
 
@@ -80,7 +97,7 @@ The root `tsconfig.json` is a solution file referencing the twelve `packages/**`
 
 ## Tests
 
-- **Unit / property:** root `vitest.config.ts` runs `packages/**/*.test.ts` and `games/**/*.test.ts`. Core carries the kernel unit tests, `fast-check` property tests (atomicity, card membership, replay equivalence, conservation), a golden-digest stream and a performance smoke test.
+- **Unit / property:** root `vitest.config.ts` runs `packages/**/*.test.ts` and `games/**/*.test.ts`. Core carries the kernel unit tests, `fast-check` property tests (atomicity, card membership, replay equivalence, conservation), a golden-digest stream, the compiler and identity tests and performance smoke tests. `packages/config` carries the YAML, bundle, registry, server-config, `config:check` (including child processes of the built CLI) and documentation tests. Performance bounds are strict under Docker or with `CGE_PERF_STRICT=1` and a 10x ceiling elsewhere.
 - **Guardrails:** separate `vitest.guardrails.config.ts` so the unit suite never accidentally runs fixture-driven tests.
 - Coverage is off unless `pnpm test:coverage` (V8 → `coverage/`, git-ignored).
 
@@ -94,7 +111,7 @@ The root `tsconfig.json` is a solution file referencing the twelve `packages/**`
 
 **Depcruise fixtures** are miniature directory trees mirroring the repo layout. Each case expects an exact set of violated rule names (some forbidden edges fire more than one named rule). When cruising a fixture, the runner clears the real config’s `exclude` of the fixtures path so the case is actually analysed.
 
-**Repo invariants** scan the real tree (and mutation copies under a temp dir) for package metadata, Node/pnpm/Docker pin agreement, placeholder tests, skeleton-only sources (every package except `packages/core`), exact `devDependencies`, workspace-only runtime deps, and documentation of root scripts / Docker / layering (see [dev-setup.md](./dev-setup.md)).
+**Repo invariants** scan the real tree (and mutation copies under a temp dir) for package metadata, Node/pnpm/Docker pin agreement, placeholder tests, skeleton-only sources (every package except `packages/core` and `packages/config`), exact `devDependencies`, workspace-only runtime deps (plus the three named, exactly-pinned ones in `packages/config`), and documentation of root scripts / Docker / layering (see [dev-setup.md](./dev-setup.md)).
 
 ### Adding a fixture case
 
@@ -108,14 +125,14 @@ Stages: `base` → `build` → `test`, and a fresh `runtime` from the same pinne
 | Stage | Role |
 |-------|------|
 | `base` | Copy manifests + lockfile, `pnpm install --frozen-lockfile` (cached unless manifests change) |
-| `build` | Full source, `pnpm build` |
+| `build` | Full source, `pnpm build`, then `pnpm bundle:games` and staging of each game's `game.yaml` and `dist/` under `/out/games` |
 | `test` | At image-build time: lint, typecheck, depcheck; default command `pnpm test:all` |
-| `runtime` | Prod install only, no sources/tests/tools, non-root `node` (UID 1000), `/data` volume, read-only `/app` for the runtime user, `NODE_ENV=production`, `CMD` runs the server entry (placeholder that exits 0 today) |
+| `runtime` | Prod install only, no sources/tests/tools, `/app/games` copied from the build stage (empty when there are no games), non-root `node` (UID 1000), `/data` volume, read-only `/app` for the runtime user, `NODE_ENV=production`, `CMD` runs the server entry (placeholder that exits 0 today) |
 
 Compose:
 
 - `deploy/docker-compose.test.yml` — service `tests`
-- `deploy/docker-compose.yml` — service `engine` (port 8080, `engine-data:/data`, read-only config bind, `ENGINE_HOST_KEY`)
+- `deploy/docker-compose.yml` — service `engine` (port 8080, `engine-data:/data`, read-only bind of `config/server.yaml` at `/etc/engine/server.yaml`, `ENGINE_HOST_KEY`)
 
 `.dockerignore` drops `node_modules`, `.git`, `coverage`, `dist`, tsbuildinfo, and `.env*` from the build context, with a narrow re-include so a depcheck fixture that needs a tracked `dist` file still reaches the image.
 

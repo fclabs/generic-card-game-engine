@@ -3,6 +3,7 @@ import type {
   AuthorizationPort,
   CommitResult,
   CommittedTransaction,
+  DefinitionRegistry,
   HookRunner,
   IdempotencyLedger,
   Lease,
@@ -16,7 +17,8 @@ import type {
   TimerPort,
   Transaction,
 } from "./index.js";
-import type { SessionId, Seq } from "../session/index.js";
+import type { CompiledGameDefinition } from "../definition/index.js";
+import type { DefinitionId, SessionId, Seq } from "../session/index.js";
 
 /** In-memory objects implementing every port using only the exported types (VC-085). */
 export function inMemoryStore(initial: StoredSession): SessionStore & {
@@ -121,6 +123,25 @@ export function recordingTimer(): TimerPort & {
     consume(row) {
       consumed.push(row);
       return Promise.resolve();
+    },
+  };
+}
+
+/** In-memory registry stub: resolves the given definitions, `UNKNOWN_DEFINITION` otherwise. */
+export function inMemoryRegistry(
+  definitions: ReadonlyMap<DefinitionId, CompiledGameDefinition>,
+): DefinitionRegistry {
+  return {
+    resolve(id) {
+      const found = definitions.get(id);
+      return Promise.resolve(
+        found === undefined
+          ? err({
+              code: "UNKNOWN_DEFINITION" as const,
+              detail: `no definition ${id}`,
+            })
+          : ok(found),
+      );
     },
   };
 }

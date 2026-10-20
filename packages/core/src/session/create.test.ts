@@ -31,6 +31,8 @@ describe("VC-010 createSession initial state", () => {
       id: must(cardId(`k${String(i)}`)),
       metadataSchema: { rank: "int" as const },
       startingZone: z(i < 6 ? "deck" : "table"),
+      initialMetadata: i === 0 ? { rank: 7 } : {},
+      metadataVisibility: {},
     })),
   });
 
@@ -44,7 +46,7 @@ describe("VC-010 createSession initial state", () => {
     for (const card of def.cards) {
       expect(s.cards[card.id]?.zone).toBe(card.startingZone);
       expect(s.cards[card.id]?.orientation).toBe("face_down");
-      expect(s.cards[card.id]?.metadata).toEqual({});
+      expect(s.cards[card.id]?.metadata).toEqual(card.initialMetadata);
     }
     expect(s.zones[z("deck")]?.members).toEqual(
       def.cards.slice(0, 6).map((c) => c.id),
@@ -137,7 +139,15 @@ describe("VC-011 roster validation", () => {
 describe("VC-054 (create half) reserved engine.* meta schema", () => {
   it("assertDefinitionStructure and createSession both fail", () => {
     const def = buildDefinition({
-      metaSchemas: [{ id: "engine.custom", fields: {}, reducer: (p) => p }],
+      metaSchemas: [
+        {
+          id: "engine.custom",
+          fields: {},
+          reducerRef: "r",
+          fieldVisibility: {},
+          reducer: (p) => p,
+        },
+      ],
     });
     const direct = assertDefinitionStructure(def);
     expect(direct.ok).toBe(false);

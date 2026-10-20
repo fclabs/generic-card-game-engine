@@ -88,13 +88,14 @@ export function createSession(
     setOwn<CardState>(cards, card.id, {
       zone: card.startingZone,
       orientation: "face_down",
-      metadata: {},
+      metadata: { ...card.initialMetadata },
     });
     zoneMembers.get(card.startingZone)?.push(card.id);
   }
   const zones: Record<ZoneId, ZoneState> = {};
   for (const zone of definition.zones) {
     setOwn<ZoneState>(zones, zone.id, {
+      ...(zone.owner !== undefined ? { owner: zone.owner } : {}),
       members: zoneMembers.get(zone.id) ?? [],
     });
   }

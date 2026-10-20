@@ -75,19 +75,26 @@ export function buildReducerDefinition(
       {
         id: "notes",
         fields: { text: "string" },
+        reducerRef: "notesReducer",
+        fieldVisibility: {},
         reducer: over.notes ?? mergeReducer,
       },
       {
         id: "score",
         fields: { points: "int" },
+        reducerRef: "scoreReducer",
+        fieldVisibility: {},
         reducer: over.score ?? mergeReducer,
       },
       {
         id: "blob",
         fields: { data: "json" },
+        reducerRef: "blobReducer",
+        fieldVisibility: {},
         reducer: over.blob ?? mergeReducer,
       },
     ],
+    rosterReducerRef: "rosterReducer",
     rosterReducer: over.roster ?? defaultRosterReducer,
   });
 }

@@ -20,6 +20,7 @@ function counter(id: string, rest: Partial<CounterDecl> = {}): CounterDecl {
   return {
     id: kid(id),
     owner: "table",
+    visibility: {},
     min: -(10n ** 40n),
     max: 10n ** 40n,
     initial: 0n,

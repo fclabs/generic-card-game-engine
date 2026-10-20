@@ -4,6 +4,7 @@ import {
   boolNode,
   idMapNode,
   intNode,
+  jsonNode,
   objectNode,
   optionalNode,
   stringNode,
@@ -11,13 +12,15 @@ import {
 import type { CanonicalSchema } from "./schema.js";
 
 const strings = arrayNode(stringNode);
+const visibilityRules = idMapNode(stringNode);
 
 /**
- * Canonical schema of `DefinitionData` (the data portion of a definition, KFR-100/070):
- * function-valued members appear only as the booleans `derived`, `hasReducer` and
- * `hasRosterReducer`. Used to prove the data portion is serialisable; not part of the digest.
+ * Identity schema of `DefinitionData` (DFR-066): covers every field of the compiled definition's
+ * data portion. Function-valued members never appear; identity is carried by `derivedSpec`,
+ * `reducerRef` and `rosterReducerRef`. Fields added in Phase 2 (spec §7.2) are appended to each
+ * object in the order §7.2 lists them. The canonical profile rules themselves are unchanged.
  */
-export const definitionDataSchema: CanonicalSchema = objectNode([
+export const definitionIdentitySchema: CanonicalSchema = objectNode([
   ["schemaVersion", intNode],
   [
     "cards",
@@ -27,6 +30,8 @@ export const definitionDataSchema: CanonicalSchema = objectNode([
         ["type", optionalNode(stringNode)],
         ["metadataSchema", idMapNode(stringNode)],
         ["startingZone", stringNode],
+        ["initialMetadata", idMapNode(jsonNode)],
+        ["metadataVisibility", idMapNode(stringNode)],
       ]),
     ),
   ],
@@ -36,6 +41,8 @@ export const definitionDataSchema: CanonicalSchema = objectNode([
       objectNode([
         ["id", stringNode],
         ["ordered", boolNode],
+        ["owner", optionalNode(stringNode)],
+        ["visibility", visibilityRules],
       ]),
     ),
   ],
@@ -47,6 +54,7 @@ export const definitionDataSchema: CanonicalSchema = objectNode([
         ["ownerRule", stringNode],
         ["ordered", boolNode],
         ["maxInstances", intNode],
+        ["visibility", visibilityRules],
       ]),
     ),
   ],
@@ -62,7 +70,17 @@ export const definitionDataSchema: CanonicalSchema = objectNode([
         ["scale", optionalNode(intNode)],
         ["rounding", optionalNode(stringNode)],
         ["supplyRole", optionalNode(stringNode)],
-        ["derived", boolNode],
+        ["ownerId", optionalNode(stringNode)],
+        ["visibility", visibilityRules],
+        [
+          "derivedSpec",
+          optionalNode(
+            objectNode([
+              ["kind", stringNode],
+              ["zone", stringNode],
+            ]),
+          ),
+        ],
       ]),
     ),
   ],
@@ -104,11 +122,11 @@ export const definitionDataSchema: CanonicalSchema = objectNode([
       objectNode([
         ["id", stringNode],
         ["fields", idMapNode(stringNode)],
-        ["hasReducer", boolNode],
+        ["reducerRef", stringNode],
+        ["fieldVisibility", idMapNode(stringNode)],
       ]),
     ),
   ],
-  ["hasRosterReducer", boolNode],
   [
     "policies",
     objectNode([
@@ -117,4 +135,15 @@ export const definitionDataSchema: CanonicalSchema = objectNode([
     ]),
   ],
   ["hookBindings", idMapNode(strings)],
+  ["gameId", stringNode],
+  [
+    "roles",
+    arrayNode(
+      objectNode([
+        ["id", stringNode],
+        ["subject", stringNode],
+      ]),
+    ),
+  ],
+  ["rosterReducerRef", optionalNode(stringNode)],
 ]);

@@ -1,0 +1,6 @@
+id: good-helper
+action_schema_version: 1
+seats: { count: 2 }
+hooks:
+  module: ./hooks.ts
+  authorization: [authorize]

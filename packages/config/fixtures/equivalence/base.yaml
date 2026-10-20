@@ -1,0 +1,38 @@
+id: hearts
+action_schema_version: 1
+seats:
+  count: 4
+zones:
+  - id: stock
+    ordering: ordered
+  - id: trash
+    ordering: unordered
+cards:
+  - generate:
+      axes:
+        - name: suit
+          values: [S, H, D, C]
+        - name: rank
+          values: { range: [1, 13] }
+      id: "{suit}{rank}"
+      type: "{suit}"
+      zone: stock
+      metadata: { suit: "{suit}", rank: "{rank}" }
+      metadata_schema:
+        suit: { type: string, visibility: public }
+        rank: { type: int, visibility: public }
+  - generate:
+      axes:
+        - name: suit
+          values: [S, H, D, C]
+        - name: rank
+          values: { range: [1, 13] }
+      id: "T{suit}{rank}"
+      type: "{suit}"
+      zone: trash
+      metadata: { suit: "{suit}", rank: "{rank}" }
+      metadata_schema:
+        suit: { type: string, visibility: public }
+        rank: { type: int, visibility: public }
+control:
+  initial_phase: main

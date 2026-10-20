@@ -65,14 +65,18 @@ describe("VC-045 meta and roster reducers", () => {
     expect(e.detail).toContain("nope");
   });
 
-  it("a definition without the reducer entry rejects the schema_id too", () => {
-    const noReducer = {
+  it("a schema whose reducer function is unbound is REDUCER_ERROR (DFR-065)", () => {
+    const { reducer, ...unbound } = def.metaSchemas[0] as NonNullable<
+      (typeof def.metaSchemas)[number]
+    >;
+    expect(reducer).toBeDefined();
+    const noReducer: CompiledGameDefinition = {
       ...def,
-      metaSchemas: [{ id: "notes", fields: { text: "string" as const } }],
-    } as unknown as CompiledGameDefinition;
-    expect(errorOf(run(start, [meta("notes", {})], noReducer)).code).toBe(
-      "MALFORMED_ACTION",
-    );
+      metaSchemas: [unbound],
+    };
+    const e = errorOf(run(start, [meta("notes", {})], noReducer));
+    expect(e.code).toBe("REDUCER_ERROR");
+    expect(e.detail).toBe(`reducer not bound: ${unbound.reducerRef}`);
   });
 
   it("roster join (roster reducer) changes only roster", () => {
@@ -89,13 +93,14 @@ describe("VC-045 meta and roster reducers", () => {
     expect(out.roster.seats["s2" as never]?.status).toBe("sitting_out");
   });
 
-  it("roster op without a roster reducer is MALFORMED_ACTION", () => {
+  it("roster op with a roster reference but no bound reducer is REDUCER_ERROR (DFR-065)", () => {
     const { rosterReducer, ...rest } = def;
     expect(rosterReducer).toBeDefined();
     const e = errorOf(
       run(start, [rosterOp("join", { player_id: "p2", seat_id: "s2" })], rest),
     );
-    expect(e.code).toBe("MALFORMED_ACTION");
+    expect(e.code).toBe("REDUCER_ERROR");
+    expect(e.detail).toBe(`reducer not bound: ${def.rosterReducerRef}`);
     expect(e.path).toBe("$[0].op");
   });
 
@@ -630,6 +635,7 @@ describe("VC-056 reducer in the middle of a conservation batch", () => {
   const counter = (id: string) => ({
     id: id as never,
     owner: "table" as const,
+    visibility: {},
     min: 0n,
     initial: 100n,
   });

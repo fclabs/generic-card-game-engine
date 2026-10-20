@@ -7,21 +7,20 @@ import type {
   HookBindingTable,
   MetaSchemaDecl,
   PolicyDecl,
+  RoleDecl,
   SeatDecl,
   ZoneDecl,
   ZoneTemplateDecl,
 } from "./types.js";
 import type { TeamId } from "../session/ids.js";
 
-export type CounterData = Omit<CounterDecl, "derived"> & {
-  readonly derived: boolean;
-};
-export type MetaSchemaData = Omit<MetaSchemaDecl, "reducer"> & {
-  readonly hasReducer: boolean;
-};
+export type CounterData = Omit<CounterDecl, "derived">;
+export type MetaSchemaData = Omit<MetaSchemaDecl, "reducer">;
 
 /** The data portion of a definition: no function-valued member, no `undefined` values. */
 export interface DefinitionData {
+  readonly gameId: string;
+  readonly roles: readonly RoleDecl[];
   readonly schemaVersion: number;
   readonly cards: readonly CardDecl[];
   readonly zones: readonly ZoneDecl[];
@@ -33,38 +32,43 @@ export interface DefinitionData {
   readonly viewKeys: readonly string[];
   readonly control: ControlDecl;
   readonly metaSchemas: readonly MetaSchemaData[];
-  readonly hasRosterReducer: boolean;
+  readonly rosterReducerRef?: string;
   readonly policies: PolicyDecl;
   readonly hookBindings: HookBindingTable;
 }
 
 /**
- * Data-vs-function rule (KFR-100): the only function-valued members are
- * `counters[].derived`, `metaSchemas[].reducer` and `rosterReducer`. They are
- * replaced by the booleans `derived`, `hasReducer` and `hasRosterReducer`;
- * everything else is passed through unchanged. Evaluators and reducers are
- * resolved from the definition value itself, never from this data.
+ * Data-vs-function rule (KFR-100, DFR-066): the only function-valued members are
+ * `counters[].derived`, `metaSchemas[].reducer` and `rosterReducer`. They are dropped;
+ * identity is carried by `derivedSpec`, `reducerRef` and `rosterReducerRef`, so binding
+ * functions never changes the data. Everything else is passed through unchanged.
  */
 export function definitionData(def: CompiledGameDefinition): DefinitionData {
   return {
+    gameId: def.gameId,
+    roles: def.roles,
     schemaVersion: def.schemaVersion,
     cards: def.cards,
     zones: def.zones,
     zoneTemplates: def.zoneTemplates,
-    counters: def.counters.map(({ derived, ...rest }) => ({
-      ...rest,
-      derived: derived !== undefined,
-    })),
+    counters: def.counters.map((counter) => {
+      const { derived, ...rest } = counter;
+      void derived;
+      return rest;
+    }),
     conservationGroups: def.conservationGroups,
     seats: def.seats,
     teams: def.teams,
     viewKeys: def.viewKeys,
     control: def.control,
-    metaSchemas: def.metaSchemas.map(({ reducer, ...rest }) => ({
-      ...rest,
-      hasReducer: reducer !== undefined,
-    })),
-    hasRosterReducer: def.rosterReducer !== undefined,
+    metaSchemas: def.metaSchemas.map((schema) => {
+      const { reducer, ...rest } = schema;
+      void reducer;
+      return rest;
+    }),
+    ...(def.rosterReducerRef !== undefined
+      ? { rosterReducerRef: def.rosterReducerRef }
+      : {}),
     policies: def.policies,
     hookBindings: def.hookBindings,
   };

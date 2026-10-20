@@ -170,8 +170,20 @@ describe("VC-038 control_advance", () => {
 describe("VC-041 zone_create / zone_destroy ids, ordinals and limits", () => {
   const d2 = buildDefinition({
     zoneTemplates: [
-      { name: "hand", ownerRule: "seat", ordered: false, maxInstances: 2 },
-      { name: "pile", ownerRule: "none", ordered: true, maxInstances: 2 },
+      {
+        name: "hand",
+        ownerRule: "seat",
+        ordered: false,
+        maxInstances: 2,
+        visibility: {},
+      },
+      {
+        name: "pile",
+        ownerRule: "none",
+        ordered: true,
+        maxInstances: 2,
+        visibility: {},
+      },
     ],
   });
   const s0 = startState(d2);
@@ -275,7 +287,10 @@ describe("VC-042 zone_create ids, owners and destroy failures", () => {
 
   it("KBR-006: a derived id equal to an existing zone id is rejected", () => {
     const dc = buildDefinition({
-      zones: [{ id: must(zoneId("pile/_/1")), ordered: true }, ...def.zones],
+      zones: [
+        { id: must(zoneId("pile/_/1")), ordered: true, visibility: {} },
+        ...def.zones,
+      ],
     });
     const e = errorOf(run(startState(dc), [A.zoneCreate("pile")], dc));
     expect(e.code).toBe("MALFORMED_ACTION");
@@ -285,8 +300,20 @@ describe("VC-042 zone_create ids, owners and destroy failures", () => {
   it("distinct (template, owner) pairs derive distinct ids", () => {
     const dd = buildDefinition({
       zoneTemplates: [
-        { name: "a", ownerRule: "seat", ordered: false, maxInstances: 5 },
-        { name: "a-b", ownerRule: "seat", ordered: false, maxInstances: 5 },
+        {
+          name: "a",
+          ownerRule: "seat",
+          ordered: false,
+          maxInstances: 5,
+          visibility: {},
+        },
+        {
+          name: "a-b",
+          ownerRule: "seat",
+          ordered: false,
+          maxInstances: 5,
+          visibility: {},
+        },
       ],
     });
     const s = startState(dd);
@@ -340,8 +367,20 @@ describe("VC-042 zone_create ids, owners and destroy failures", () => {
   it("team- and player-rule owners", () => {
     const dt = buildDefinition({
       zoneTemplates: [
-        { name: "tz", ownerRule: "team", ordered: false, maxInstances: 5 },
-        { name: "pz", ownerRule: "player", ordered: false, maxInstances: 5 },
+        {
+          name: "tz",
+          ownerRule: "team",
+          ordered: false,
+          maxInstances: 5,
+          visibility: {},
+        },
+        {
+          name: "pz",
+          ownerRule: "player",
+          ordered: false,
+          maxInstances: 5,
+          visibility: {},
+        },
       ],
     });
     const s = startState(dt);
@@ -375,7 +414,13 @@ describe("VC-050 nextZoneId", () => {
   it("a later move into a pending id in the same batch succeeds", () => {
     const d = buildDefinition({
       zoneTemplates: [
-        { name: "pile", ownerRule: "none", ordered: true, maxInstances: 4 },
+        {
+          name: "pile",
+          ownerRule: "none",
+          ordered: true,
+          maxInstances: 4,
+          visibility: {},
+        },
       ],
     });
     const s = startState(d);

@@ -2,19 +2,26 @@ import { describe, it, expect, expectTypeOf } from "vitest";
 import { readFileSync } from "node:fs";
 import type {
   AuthorizationPort,
+  DefinitionRegistry,
+  DefinitionSummary,
   HookRunner,
   OutboxRow,
   Receipt,
+  RegistryError,
   SessionStore,
   Transaction,
 } from "./index.js";
 import type { AbortSignalLike, ValidationHook } from "../spi/index.js";
 import type { DefinitionId, SessionId, Seq } from "../session/index.js";
+import { buildDefinition } from "../definition/definition.testing.js";
+import type { CompiledGameDefinition } from "../definition/index.js";
+import type { Result } from "../errors/result.js";
 import { startState } from "../session/apply/apply.testing.js";
 import * as ports from "./index.js";
 import {
   allowAllAuthorization,
   inMemoryLedger,
+  inMemoryRegistry,
   inMemoryStore,
   passThroughHookRunner,
   recordingPublisher,
@@ -106,6 +113,19 @@ describe("VC-085 in-memory implementations of every port", () => {
     expect(timer.consumed).toEqual([row]);
   });
 
+  it("registry stub resolves a known id and fails an unknown one", async () => {
+    const def = buildDefinition();
+    const known = "sha256:known" as DefinitionId;
+    const registry: DefinitionRegistry = inMemoryRegistry(
+      new Map([[known, def]]),
+    );
+    expect(await registry.resolve(known)).toEqual({ ok: true, value: def });
+    const missing = await registry.resolve("sha256:other" as DefinitionId);
+    expect(missing.ok === false && missing.error.code).toBe(
+      "UNKNOWN_DEFINITION",
+    );
+  });
+
   it("exports no runtime value", () => {
     expect(Object.keys(ports)).toEqual([]);
   });
@@ -167,5 +187,41 @@ describe("VC-087 AuthorizationPort op union", () => {
     expectTypeOf<
       Parameters<HookRunner["run"]>[2]
     >().toEqualTypeOf<AbortSignalLike>();
+  });
+});
+
+describe("VC-240 DefinitionRegistry port types", () => {
+  it("has the DFR-050 shapes", () => {
+    expectTypeOf<RegistryError["code"]>().toEqualTypeOf<
+      "UNKNOWN_DEFINITION" | "DEFINITION_HASH_MISMATCH" | "DEFINITION_INVALID"
+    >();
+    expectTypeOf<RegistryError["detail"]>().toEqualTypeOf<string>();
+    expectTypeOf<DefinitionSummary>().toEqualTypeOf<{
+      readonly definitionId: DefinitionId;
+      readonly gameId: string;
+      readonly schemaVersion: number;
+    }>();
+    expectTypeOf<Parameters<DefinitionRegistry["resolve"]>>().toEqualTypeOf<
+      [id: DefinitionId]
+    >();
+    expectTypeOf<ReturnType<DefinitionRegistry["resolve"]>>().toEqualTypeOf<
+      Promise<Result<CompiledGameDefinition, RegistryError>>
+    >();
+  });
+
+  it("is exported from the package root without a runtime value", async () => {
+    const root = await import("../index.js");
+    expect(Object.keys(ports)).toEqual([]);
+    expect("DefinitionRegistry" in root).toBe(false);
+    expect("RegistryError" in root).toBe(false);
+  });
+
+  it("emitted JS of ports exports nothing", () => {
+    const js = readFileSync(
+      new URL("./types.js", import.meta.url.replace("/src/", "/dist/")),
+      "utf8",
+    );
+    expect(js).not.toMatch(/\bclass\b|\bfunction\b/);
+    expect(js).toMatch(/export\s*\{\s*\}/);
   });
 });

@@ -188,7 +188,7 @@ module.exports = {
       // FR-026 requires relative imports into another package's dist to be caught.
       // Do NOT exclude node_modules here — that would drop edges to resolved npm
       // packages and silence no-undeclared-deps. Use doNotFollow for node_modules.
-      path: "tools/guardrails/fixtures|coverage|\\.tsbuildinfo$",
+      path: "tools/guardrails/fixtures|packages/config/fixtures|coverage|\\.tsbuildinfo$",
     },
     tsPreCompilationDeps: true,
     tsConfig: {

@@ -105,6 +105,7 @@ export function buildPropertyDefinition(): CompiledGameDefinition {
   ): CompiledGameDefinition["counters"][number] => ({
     id: mustId(counterId(id)),
     owner: "table",
+    visibility: {},
     min: 0n,
     initial: 0n,
     ...over,
@@ -112,6 +113,7 @@ export function buildPropertyDefinition(): CompiledGameDefinition {
   const zone = (id: string, ordered: boolean) => ({
     id: mustId(zoneId(id)),
     ordered,
+    visibility: {},
   });
   return {
     ...buildReducerDefinition(),
@@ -120,6 +122,8 @@ export function buildPropertyDefinition(): CompiledGameDefinition {
       type: "playing",
       metadataSchema: { rank: "int" as const, suit: "string" as const },
       startingZone: mustId(zoneId("deck")),
+      initialMetadata: {},
+      metadataVisibility: {},
     })),
     zones: [
       zone("deck", true),
@@ -128,9 +132,27 @@ export function buildPropertyDefinition(): CompiledGameDefinition {
       zone("hold", false),
     ],
     zoneTemplates: [
-      { name: "hand", ownerRule: "seat", ordered: false, maxInstances: 2 },
-      { name: "pile", ownerRule: "none", ordered: true, maxInstances: 3 },
-      { name: "stack", ownerRule: "team", ordered: true, maxInstances: 2 },
+      {
+        name: "hand",
+        ownerRule: "seat",
+        ordered: false,
+        maxInstances: 2,
+        visibility: {},
+      },
+      {
+        name: "pile",
+        ownerRule: "none",
+        ordered: true,
+        maxInstances: 3,
+        visibility: {},
+      },
+      {
+        name: "stack",
+        ownerRule: "team",
+        ordered: true,
+        maxInstances: 2,
+        visibility: {},
+      },
     ],
     counters: [
       counter("pot", {}),
