@@ -104,6 +104,14 @@ export function applyRosterReducer(
 ): Result<Action> {
   const reducer = ctx.def.rosterReducer;
   if (reducer === undefined) {
+    const ref = ctx.def.rosterReducerRef;
+    if (ref !== undefined) {
+      return ctx.fail(
+        "REDUCER_ERROR",
+        `reducer not bound: ${ref}`,
+        ctx.path(".op"),
+      );
+    }
     return ctx.fail(
       "MALFORMED_ACTION",
       `no roster reducer registered for op ${action.op}`,

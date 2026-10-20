@@ -82,7 +82,13 @@ describe("assertDefinitionStructure (VC-083)", () => {
       "initial below min",
       buildDefinition({
         counters: [
-          { id: must(counterId("x")), owner: "table", min: 0n, initial: -1n },
+          {
+            id: must(counterId("x")),
+            owner: "table",
+            visibility: {},
+            min: 0n,
+            initial: -1n,
+          },
         ],
         conservationGroups: [],
       }),
@@ -95,6 +101,7 @@ describe("assertDefinitionStructure (VC-083)", () => {
           {
             id: must(counterId("x")),
             owner: "table",
+            visibility: {},
             min: 0n,
             max: 5n,
             initial: 6n,
@@ -106,13 +113,25 @@ describe("assertDefinitionStructure (VC-083)", () => {
     ],
     [
       "meta schema without reducer",
-      buildDefinition({ metaSchemas: [{ id: "notes", fields: {} }] }),
-      "meta schema notes has no reducer",
+      buildDefinition({
+        metaSchemas: [
+          { id: "notes", fields: {}, reducerRef: "", fieldVisibility: {} },
+        ],
+      }),
+      "meta schema notes has no reducer reference",
     ],
     [
       "reserved engine. meta schema (VC-054)",
       buildDefinition({
-        metaSchemas: [{ id: "engine.custom", fields: {}, reducer: (p) => p }],
+        metaSchemas: [
+          {
+            id: "engine.custom",
+            fields: {},
+            reducerRef: "r",
+            fieldVisibility: {},
+            reducer: (p) => p,
+          },
+        ],
       }),
       "meta schema engine.custom uses the reserved engine. namespace",
     ],
@@ -120,7 +139,13 @@ describe("assertDefinitionStructure (VC-083)", () => {
       "template name with slash",
       buildDefinition({
         zoneTemplates: [
-          { name: "a/b", ownerRule: "none", ordered: true, maxInstances: 1 },
+          {
+            name: "a/b",
+            ownerRule: "none",
+            ordered: true,
+            maxInstances: 1,
+            visibility: {},
+          },
         ],
       }),
       "zone template a/b contains",
@@ -134,6 +159,7 @@ describe("assertDefinitionStructure (VC-083)", () => {
             ownerRule: "none",
             ordered: true,
             maxInstances: 1,
+            visibility: {},
           },
         ],
       }),
@@ -243,12 +269,19 @@ describe("definition shape (VC-089, shape half)", () => {
       }
     };
     walk(data);
-    expect(data.counters.map((c) => c.derived)).toEqual([false, false, true]);
-    expect(data.metaSchemas[0]?.hasReducer).toBe(true);
-    expect(data.hasRosterReducer).toBe(true);
-    const { rosterReducer, ...noRoster } = base;
+    expect(data.counters.map((c) => "derived" in c)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(data.metaSchemas[0]?.reducerRef).toBe("identity");
+    expect("hasReducer" in (data.metaSchemas[0] ?? {})).toBe(false);
+    expect(data.rosterReducerRef).toBe("identity");
+    expect("hasRosterReducer" in data).toBe(false);
+    const { rosterReducer, rosterReducerRef, ...noRoster } = base;
     expect(typeof rosterReducer).toBe("function");
-    expect(definitionData(noRoster).hasRosterReducer).toBe(false);
+    expect(rosterReducerRef).toBe("identity");
+    expect("rosterReducerRef" in definitionData(noRoster)).toBe(false);
   });
 });
 

@@ -622,16 +622,20 @@ describe("ids that collide with Object.prototype members (carry-over from iterat
           id: must(cardId("__proto__")),
           metadataSchema: { rank: "int" },
           startingZone: must(zoneId("deck")),
+          initialMetadata: {},
+          metadataVisibility: {},
         },
         {
           id: must(cardId("c2")),
           metadataSchema: { rank: "int" },
           startingZone: must(zoneId("deck")),
+          initialMetadata: {},
+          metadataVisibility: {},
         },
       ],
       zones: [
-        { id: must(zoneId("deck")), ordered: true },
-        { id: must(zoneId("__proto__")), ordered: false },
+        { id: must(zoneId("deck")), ordered: true, visibility: {} },
+        { id: must(zoneId("__proto__")), ordered: false, visibility: {} },
       ],
     });
     const s0 = startState(proto);

@@ -1,11 +1,26 @@
 import { err, ok } from "../errors/result.js";
 import type { Result } from "../errors/result.js";
-import type { CompiledGameDefinition } from "./types.js";
+import { hasOwn } from "../session/records.js";
+import type { JsonValue } from "../session/state.js";
+import type { CompiledGameDefinition, FieldType } from "./types.js";
 
 const TEMPLATE_NAME_MAX = 48;
 
 function violation(detail: string): Result<void> {
   return err({ code: "MALFORMED_ACTION", detail });
+}
+
+function matchesType(type: FieldType, value: JsonValue): boolean {
+  switch (type) {
+    case "string":
+      return typeof value === "string";
+    case "int":
+      return typeof value === "number";
+    case "bool":
+      return typeof value === "boolean";
+    case "json":
+      return true;
+  }
 }
 
 /** First duplicate id in `ids`, or undefined. */
@@ -41,6 +56,19 @@ export function assertDefinitionStructure(
       return violation(
         `card ${card.id} starts in unknown zone: ${card.startingZone}`,
       );
+    }
+    for (const [field, value] of Object.entries(card.initialMetadata)) {
+      if (!hasOwn(card.metadataSchema, field)) {
+        return violation(
+          `card ${card.id} initialMetadata field ${field} is not declared in metadataSchema`,
+        );
+      }
+      const type = card.metadataSchema[field];
+      if (type === undefined || !matchesType(type, value)) {
+        return violation(
+          `card ${card.id} initialMetadata field ${field} must be of type ${String(type)}`,
+        );
+      }
     }
   }
 
@@ -80,8 +108,8 @@ export function assertDefinitionStructure(
   }
 
   for (const schema of def.metaSchemas) {
-    if (typeof schema.reducer !== "function") {
-      return violation(`meta schema ${schema.id} has no reducer`);
+    if (typeof schema.reducerRef !== "string" || schema.reducerRef === "") {
+      return violation(`meta schema ${schema.id} has no reducer reference`);
     }
     if (schema.id.startsWith("engine.")) {
       return violation(

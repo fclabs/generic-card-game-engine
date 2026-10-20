@@ -22,6 +22,24 @@ export type FieldType = "string" | "int" | "bool" | "json";
 /** Field name -> field type. */
 export type FieldSchema = Readonly<Record<string, FieldType>>;
 
+/** Visibility of a meta-schema field or card-metadata field (spec §7.2). */
+export type FieldVisibility = "public" | "subject" | "secret";
+
+/** Who may see an entity: everyone, nobody, its owner, or its owner's team. */
+export type Audience = "public" | "hidden" | "owner" | "team";
+
+/** Key is `default` or a role name. An empty record is "no declaration". */
+export type VisibilityRules = Readonly<Record<string, Audience>>;
+
+/** A custom role declared by the game. */
+export interface RoleDecl {
+  readonly id: string;
+  readonly subject: "required" | "optional" | "forbidden";
+}
+
+/** Declarative description of a derived counter (data; the evaluator is `derived`). */
+export type DerivedSpec = { readonly kind: "zone_size"; readonly zone: ZoneId };
+
 /** Pure derived-counter evaluator `(snapshot) -> bigint` (KFR-063). */
 export type DerivedEvaluator = (snapshot: Snapshot<SessionState>) => bigint;
 
@@ -30,11 +48,17 @@ export interface CardDecl {
   readonly type?: string;
   readonly metadataSchema: FieldSchema;
   readonly startingZone: ZoneId;
+  /** Seeds `cards[c].metadata`; keys and types must conform to `metadataSchema`. */
+  readonly initialMetadata: Readonly<Record<string, JsonValue>>;
+  readonly metadataVisibility: Readonly<Record<string, FieldVisibility>>;
 }
 
 export interface ZoneDecl {
   readonly id: ZoneId;
   readonly ordered: boolean;
+  /** Seeds `zones[z].owner`. */
+  readonly owner?: SeatId | TeamId;
+  readonly visibility: VisibilityRules;
 }
 
 export type OwnerRule = "seat" | "team" | "player" | "none";
@@ -45,6 +69,7 @@ export interface ZoneTemplateDecl {
   readonly ownerRule: OwnerRule;
   readonly ordered: boolean;
   readonly maxInstances: number;
+  readonly visibility: VisibilityRules;
 }
 
 export type CounterOwner = "table" | "player" | "team" | "zone" | "card";
@@ -54,6 +79,8 @@ export type SupplyRole = "mint" | "burn";
 export interface CounterDecl {
   readonly id: CounterId;
   readonly owner: CounterOwner;
+  readonly ownerId?: string;
+  readonly visibility: VisibilityRules;
   readonly min: bigint;
   readonly max?: bigint;
   readonly initial: bigint;
@@ -63,6 +90,8 @@ export interface CounterDecl {
   readonly supplyRole?: SupplyRole;
   /** Present for derived counters: computed on demand, never stored. */
   readonly derived?: DerivedEvaluator;
+  /** Data form of `derived`; this (not the function) enters the identity data. */
+  readonly derivedSpec?: DerivedSpec;
 }
 
 export interface ConservationGroupDecl {
@@ -90,7 +119,10 @@ export interface MetaSchemaDecl {
   /** `schema_id`; the `engine.` prefix is reserved. */
   readonly id: string;
   readonly fields: FieldSchema;
-  /** Required; absence is a structural violation. */
+  /** Name of the reducer export; required (non-empty). Bound to a function by P4. */
+  readonly reducerRef: string;
+  readonly fieldVisibility: Readonly<Record<string, FieldVisibility>>;
+  /** Bound by P4, never by the compiler. */
   readonly reducer?: Reducer<JsonValue>;
 }
 
@@ -104,6 +136,8 @@ export interface PolicyDecl {
 export type HookBindingTable = Readonly<Record<string, readonly string[]>>;
 
 export interface CompiledGameDefinition {
+  readonly gameId: string;
+  readonly roles: readonly RoleDecl[];
   /** Action-schema version. */
   readonly schemaVersion: number;
   readonly cards: readonly CardDecl[];
@@ -118,6 +152,8 @@ export interface CompiledGameDefinition {
   readonly viewKeys: readonly string[];
   readonly control: ControlDecl;
   readonly metaSchemas: readonly MetaSchemaDecl[];
+  readonly rosterReducerRef?: string;
+  /** Bound by P4, never by the compiler. */
   readonly rosterReducer?: Reducer<RosterState>;
   readonly policies: PolicyDecl;
   readonly hookBindings: HookBindingTable;

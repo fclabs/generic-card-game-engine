@@ -179,7 +179,13 @@ describe("VC-047 zone_merge (KFR-046)", () => {
   it("an unordered dst gets no positions", () => {
     const d = buildDefinition({
       zoneTemplates: [
-        { name: "bag", ownerRule: "none", ordered: false, maxInstances: 3 },
+        {
+          name: "bag",
+          ownerRule: "none",
+          ordered: false,
+          maxInstances: 3,
+          visibility: {},
+        },
       ],
     });
     const b = startState(d);
