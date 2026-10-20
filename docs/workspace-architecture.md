@@ -48,6 +48,23 @@ Files under `packages/core/**`, `packages/helpers/**`, and `games/*/hooks/**`, e
 
 Rules are implemented in a local plugin (`eslint/cge-plugin.mjs`) with exact ids `cge/…`, and wired through a standalone flat-config array (`determinismConfig`) that the real ESLint config spreads in. That split lets the guardrail suite lint virtual fixture paths with the same syntactic rules without needing those paths to appear in a tsconfig (type-aware rules cannot).
 
+## `packages/core` contents
+
+`packages/core` is the domain kernel (see [domain-kernel.md](./domain-kernel.md)). It is the only package allowed to hold source code beyond a placeholder export; the skeleton-purity repository invariant still applies to every other package.
+
+| Folder under `src/` | Contents |
+|---------------------|----------|
+| `errors/` | `ErrorCode` union and `ERROR_CODES`, `EngineError`, `GameRejection`, `Result`, `ok` / `err` |
+| `session/` | branded ids and guards, `Snapshot` / `deepFreeze`, state types, `createSession`, `maskGates`, `nextZoneId`, `ratioRound`, the seeded PRNG, action and macro types with `validateAction`, and `apply/` (the pipeline: admission, validation, expansion, `primitives/`, reducers, invariants, conservation, commit) |
+| `definition/` | `CompiledGameDefinition` and its part types, `assertDefinitionStructure`, `definitionData` |
+| `replay/canonical/` | `canonicalize`, `CanonicalSchema`, `CanonicalError`, `stateDigest`, pure-TypeScript SHA-256 and `golden-vectors.json` (see [canonical-json-profile.md](./canonical-json-profile.md)); `replay/index.ts` re-exports it |
+| `spi/` | rule SPI types only |
+| `ports/` | port interfaces and payload types only |
+| `visibility/` | reserved for the projection layer; still an empty module |
+| `util/` | internal helpers (UTF-8 encoder), not exported from the package |
+
+Conventions inside the package: unit tests are `*.test.ts` next to the source; shared test builders and generators are `*.testing.ts` (excluded from the production `tsconfig.json`, compiled only by `tsconfig.test.json`, subject to the determinism lint and never exported from an index); committed fixtures (`golden-vectors.json`, `prng-vectors.json`, `golden-stream.json`) sit beside the tests that assert them. A few tests read `packages/core/dist` (the emitted `spi` and `ports` JavaScript) and so rely on the build that `pnpm test` runs first. `packages/core/package.json` has no runtime `dependencies`, and only `fast-check` and `vitest` as exact-pinned `devDependencies`.
+
 ## Build-first commands and `dist`-only exports
 
 Every package’s `exports` map exposes only `"."` → `./dist/index.d.ts` / `./dist/index.js`. Cross-package imports therefore always resolve to built output.
@@ -63,7 +80,7 @@ The root `tsconfig.json` is a solution file referencing the twelve `packages/**`
 
 ## Tests
 
-- **Unit / property:** root `vitest.config.ts` runs `packages/**/*.test.ts` and `games/**/*.test.ts`. Core carries one `fast-check` property placeholder.
+- **Unit / property:** root `vitest.config.ts` runs `packages/**/*.test.ts` and `games/**/*.test.ts`. Core carries the kernel unit tests, `fast-check` property tests (atomicity, card membership, replay equivalence, conservation), a golden-digest stream and a performance smoke test.
 - **Guardrails:** separate `vitest.guardrails.config.ts` so the unit suite never accidentally runs fixture-driven tests.
 - Coverage is off unless `pnpm test:coverage` (V8 → `coverage/`, git-ignored).
 
@@ -77,7 +94,7 @@ The root `tsconfig.json` is a solution file referencing the twelve `packages/**`
 
 **Depcruise fixtures** are miniature directory trees mirroring the repo layout. Each case expects an exact set of violated rule names (some forbidden edges fire more than one named rule). When cruising a fixture, the runner clears the real config’s `exclude` of the fixtures path so the case is actually analysed.
 
-**Repo invariants** scan the real tree (and mutation copies under a temp dir) for package metadata, Node/pnpm/Docker pin agreement, placeholder tests, skeleton-only sources, exact `devDependencies`, workspace-only runtime deps, and documentation of root scripts / Docker / layering (see [dev-setup.md](./dev-setup.md)).
+**Repo invariants** scan the real tree (and mutation copies under a temp dir) for package metadata, Node/pnpm/Docker pin agreement, placeholder tests, skeleton-only sources (every package except `packages/core`), exact `devDependencies`, workspace-only runtime deps, and documentation of root scripts / Docker / layering (see [dev-setup.md](./dev-setup.md)).
 
 ### Adding a fixture case
 

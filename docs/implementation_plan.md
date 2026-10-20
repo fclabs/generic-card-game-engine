@@ -10,7 +10,7 @@
 
 - **Phases 0–9** deliver Part A (single-instance MVP). When Phase 9 exits, every *Must* requirement is satisfied and the system runs in Docker.
 - **Phases 10–14** deliver Part B. Each is additive: a new adapter behind a port that already exists. No domain code changes.
-- Phase 0 is complete; its as-built deviations are recorded in its section and apply to every later phase (notably: new packages must be added to the dependency matrix and `docs/dev-setup.md`, which a guardrail checks).
+- Phases 0 and 1 are complete; their as-built notes are in their sections. Phase 0's as-built deviations are recorded in its section and apply to every later phase (notably: new packages must be added to the dependency matrix and `docs/dev-setup.md`, which a guardrail checks).
 - Each phase leaves the repo in a working state: it builds, tests pass and the previous behaviour is preserved. Phase 8b is the one exception to "ordered": it runs off the critical path after 8a.
 - A phase's **exit criteria** are the acceptance bar for its spec. A phase is not done until they pass inside the Docker `test` target.
 
@@ -68,6 +68,8 @@ For this graph to hold, P1 owns the Rule SPI types (including `Reducer`) and the
 ---
 
 ## Phase 1 — Domain kernel
+
+**Status:** Done (as built; see [domain-kernel.md](./domain-kernel.md) and [canonical-json-profile.md](./canonical-json-profile.md)). The kernel is in `packages/core`; the canonical JSON profile v1 is frozen; the skeleton-purity guardrail now exempts `packages/core` only.
 
 **Goal:** A pure, synchronous, deterministic state-transition core: given a state and a batch of actions, produce the next state atomically, with a canonical digest.
 

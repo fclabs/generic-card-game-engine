@@ -292,10 +292,16 @@ function isAllowedSkeletonStatement(stmt: ts.Statement): boolean {
   return false;
 }
 
-/** FR-043 check 4 / BR-006 — non-test package sources are skeleton-only. */
+/**
+ * FR-043 check 4 / BR-006 — non-test package sources are skeleton-only.
+ * Phase 1 exempts `packages/core` only (spec 01-phase-1 §6.5).
+ */
 export function checkSkeletonPurity(repoRoot: string): CheckResult {
   const packagesRoot = path.join(repoRoot, "packages");
-  const files = collectNonTestTsFiles(packagesRoot);
+  const coreRoot = path.join(packagesRoot, "core") + path.sep;
+  const files = collectNonTestTsFiles(packagesRoot).filter(
+    (f) => !f.startsWith(coreRoot),
+  );
   for (const filePath of files) {
     const text = fs.readFileSync(filePath, "utf8");
     const source = ts.createSourceFile(
