@@ -212,3 +212,37 @@ Append-only. Entry format: `## D-NNN: <title>  (Iteration N)` with Context, Deci
 **Decision.** The factory returns `{registry, id, expected, edits, dispose}` (see CONTEXT.md); the suite owns assertions, the adapter owns mutation. `bundleByte` is optional. Production tsconfig for `packages/config` now excludes `src/**/*.testing.ts` (as `packages/core` does), `tsconfig.test.json` still type-checks them.
 **Rejected.** A suite that edits files itself (not portable); exporting the suite from the package (test-only code in `exports`).
 **Consequences.** P14 can move the file to a shared location (OQ-4) without changing its signature.
+
+## D-031: zod version  (Iteration 10)
+
+**Context.** DFR-080/DBR-009: exact runtime dependency in `packages/config`.
+**Decision.** `zod@4.6.7` (npm `latest` at execution time, v4 line), `pnpm --filter @cge/config add --save-exact zod@4.6.7`; `dependencies` = `@cge/core` `workspace:*`, `esbuild` `0.28.2`, `yaml` `2.9.1`, `zod` `4.6.7`. Lockfile committed; no build-script allowance needed.
+**Rejected.** zod 3 (older line); a range.
+**Consequences.** Only `z.strictObject`, `z.array`, `z.custom` and `.optional()/.min()/.refine()` are used; every failure gets our own expectation text (zod's default messages are never shown), so a zod upgrade cannot change error text or leak a value.
+
+## D-032: How provenance is tracked, how errors are built  (Iteration 10)
+
+**Context.** DFR-072: redact the value of anything that came, wholly or partly, from `${ENV}`, and of every secret.
+**Decision.** Interpolation runs on the parsed JSON before zod and records `Map<path, {whole}>` for every string that contained a placeholder (path = the same dotted/indexed text used in errors). zod runs on the interpolated copy; each issue's path is looked up: in the map or matching `auth.keys[n].secret` -> value printed as `<redacted>`; otherwise the offending scalar is printed (strings quoted, cut at 40 chars; mappings/lists as "a mapping"/"a list"). Detail format: `expected <expectation>; got <value>`. Missing = the key is absent at the issue path (-> `CONFIG_MISSING`, detail `required key is missing`); `unrecognized_keys` -> one `CONFIG_UNKNOWN_KEY` per key at `<parent>.<key>`. Secret rule (DBR-007) is checked from provenance before zod: a string secret whose provenance is not `whole` -> `CONFIG_INVALID` (value `<redacted>`) and its zod error at that path is dropped.
+**Rejected.** Wrapping values in tagged objects before zod (breaks strictness and shapes); redacting only by comparing against env values (misses partial/short cases and could leak by omission).
+**Consequences.** ENV errors short-circuit: if any `ENV_MISSING`/`ENV_SYNTAX` exists those are returned alone (no schema errors), because values are unresolved. Errors are capped at 100 by truncation of the ordered list (env/syntax, secret-source, zod issues in document order, cross-field).
+
+## D-033: Placeholder grammar details  (Iteration 10)
+
+**Context.** DFR-071/VC-261 list `${}`, `${1X}`, `${A`, `$${A}` as `ENV_SYNTAX`; a lone `$` is not discussed.
+**Decision.** Every `${` must start a well-formed `${NAME}` and must not be directly preceded by `$` (so `$${A}` is a syntax error; there are no escapes). A `$` not followed by `{` is literal. `ENV_SYNTAX` detail gives only the offset, never the string. Names are looked up with `Object.hasOwn(env, NAME)` so `${constructor}`/`${__proto__}` are `ENV_MISSING`. In YAML a flow-mapping value must be quoted (`secret: "${KEY}"`), because `{` inside `{...}` is parsed as flow syntax: write `config/server.yaml` with quoted placeholders.
+**Rejected.** Treating `$$` as an escape (spec: no escapes).
+**Consequences.** Iteration 11's `server.yaml` must quote placeholders.
+
+## D-034: Duration parsing; cascade default range; search-path distinctness  (Iteration 10)
+
+**Context.** §7.5 durations `^[1-9][0-9]*(ms|s|m|h)$` with ranges; VC-263 requires `cascade_cap.default 300` with `max 256` to be a cross-field error naming both paths, but §7.5 gives `default` the range 1-256.
+**Decision.** Durations: regex then `n * unit` ms, accepted iff safe and within the key's range (`idle_ttl` 1s-24h, `timeout` 1ms-60s); `ServerConfig` keeps the YAML key names (`idleTtl`, `timeout`) with the value in ms (documented in CONTEXT). `cascade_cap.default` is range-checked 1-4096 by the schema; the cross-field rules then enforce `default <= max` (naming `limits.cascade_cap.max`) and `default <= 256` (own `expected an integer from 1 to 256`). A `max` lowered below the implicit default 16 is an error at `limits.cascade_cap.default` (detail says "the default value"). Search paths are "absolute" per `node:path` `isAbsolute` and compared after `normalize` without a trailing slash (`/a` and `/a/` are duplicates); the duplicate error is at the later index and names the first. Duplicate key ids: error at the later `auth.keys[i].id`, names the first. Cross-field rules run only when every field passed its own validation.
+**Rejected.** Making `default` range 1-256 in the schema (VC-263 case would then not name both paths); clamping `default` to `max`.
+**Consequences.** `DefinitionLimits` gets `cascadeCapMax = limits.cascadeCap.max` (up to 4096); the compiler's own per-game range for `policies.cascade_cap` stays 1-256 (DFR-025).
+
+## D-035: Helpers exported with the loader  (Iteration 10)
+
+**Context.** Hand-off asks for how to build `DefinitionLimits` and a redaction helper.
+**Decision.** Besides `loadServerConfig`, `@cge/config` exports `definitionLimitsFromConfig(config): DefinitionLimits` (`{cascadeCapMax: limits.cascadeCap.max, costBudgetMax: limits.hook.costBudget}`), `redactServerConfig(config)` (copy with every `auth.keys[].secret` = `<redacted>`, for logging), `REDACTED`, `CONFIG_ERROR_CODES`, `SERVER_CAPABILITIES` and the types `ServerConfig`, `ConfigError`, `ConfigErrorCode`, `ServerStoreConfig`, `ServerAuthKey`, `ServerCapability`, `LogLevel`, `LogFormat`.
+**Consequences.** `config:check` and P7 should log only `redactServerConfig(config)`.

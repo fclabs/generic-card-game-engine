@@ -1,4 +1,4 @@
-# CONTEXT: Phase 2 (updated after Iteration 9)
+# CONTEXT: Phase 2 (updated after Iteration 10)
 
 ## Current state
 - Phase 0 workspace and Phase 1 domain kernel (`packages/core`) are shipped. Iteration 1 changed the P1 definition types, `createSession`, `assertDefinitionStructure`, reducer dispatch in `apply`, and the identity schema (DFR-060–066). Iterations 2-4 built the compiler: **`compileDefinition` is now complete** (every section of §7.1, `HookBundleInfo` checks, `ctx.limits`, identity validation and structural assertion before `ok`).
@@ -7,7 +7,8 @@
 - Iteration 7 added safe YAML intake: `parseYaml` in `packages/config/src/yaml.ts` (exported from the config root), `yaml@2.9.1` as the first config runtime dependency, fixtures under `packages/config/fixtures/`, and the YAML-text forms of VC-230 and the VC-275 parse parts. The full text -> `parseYaml` -> `compileDefinition` -> `definitionContentHash` path works. No bundle code, registry implementation or server-config code exists yet.
 - Iteration 8 added hook-bundle packaging: `buildHookBundle`/`bundleGames` in `packages/config/src/bundle.ts`, the `bundle:games` root script (entry `packages/config/src/bundle-games.ts`), `esbuild@0.28.2` (second config runtime dependency), three fixture games and the VC-235 static no-execution test. Bundles are built and hashed only.
 - Iteration 9 added the filesystem `DefinitionRegistry` (`packages/config/src/registry.ts`, exported from `@cge/config`), the adapter-agnostic contract suite `registry-contract.testing.ts` and the generated 20-game perf fixture. No server-config code exists yet (iteration 10).
-- Every P1 test passes (`pnpm test`: 995 tests; 174 in `pnpm test:guardrails`); `golden-vectors.json`, `session/golden-stream.json`, `session/prng-vectors.json` are byte-identical to `3bbdd4a`.
+- Iteration 10 added the server configuration loader (`packages/config/src/server-config.ts`, exported from `@cge/config`) and `zod@4.6.7` (third and last config runtime dependency). No `config/server.yaml`, no `config:check`, no docs yet (iteration 11/12).
+- Every P1 test passes (`pnpm test`: 1063 tests; 174 in `pnpm test:guardrails`); `golden-vectors.json`, `session/golden-stream.json`, `session/prng-vectors.json` are byte-identical to `3bbdd4a`.
 - Docs under `docs/` are NOT yet updated (Iteration 12 owns them); `docs/canonical-json-profile.md` (line ~121) and `docs/domain-kernel.md` still mention `definitionDataSchema` and the three removed flags.
 
 ## File map (packages/core/src, P1 as built + Iteration 1)
@@ -148,6 +149,30 @@ The factory is called once per test (fresh state, edits never leak) and `dispose
 ## Fixtures layout (Iteration 7; iteration 8 additions at the end)
 `packages/config/fixtures/` holds inert data files (iteration 8 added `hooks.ts`/`helper.ts` fixture sources, so ESLint and dependency-cruiser now exclude `packages/config/fixtures/**` explicitly, D-026; `tsc` never includes it); `.prettierignore` has `packages/config/fixtures/**` (same idea as `tools/guardrails/fixtures/**`, which is also in `eslint.config.mjs` ignores and the depcruise exclude because it contains source files). Files: `floor-definition.yaml` (generated from core's `floor-definition.json`, hashes to `identity-expected.json` `contentHashes.floor`), `equivalence/base.yaml` and `equivalence/variant.yaml` (two generators, zones, control; the variant has other key order, comments, whitespace, an anchor + alias and explicit defaults; equal hash). The 1 MiB perf documents are built in the test, not committed. Tests locate fixtures with `join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures")`. Later iterations put game fixtures (hooks, registry, server config) in sibling directories of `fixtures/`.
 
+## Public interfaces: server config (Iteration 10; `packages/config/src/server-config.ts`, exported from `@cge/config`)
+```ts
+loadServerConfig(text: string, env: Readonly<Record<string, string | undefined>>): Result<ServerConfig, readonly ConfigError[]>  // Result from @cge/core; failure field is `error`
+interface ConfigError { readonly code: ConfigErrorCode; readonly path: string; readonly detail: string }   // path "" = root
+ConfigErrorCode = YAML_SYNTAX | YAML_TOO_LARGE | YAML_DUPLICATE_KEY | YAML_FORBIDDEN_FEATURE | ENV_MISSING | ENV_SYNTAX | CONFIG_UNKNOWN_KEY | CONFIG_INVALID | CONFIG_MISSING   // CONFIG_ERROR_CODES
+interface ServerConfig {                       // all readonly; camelCase; durations in integer ms; defaults filled
+  server: { http: {host: string; port: number}; ws: {maxSubscribersPerSession: number; outboundQueue: number} }
+  auth: { mode: 'static-api-key'; keys: readonly {id: string; secret: string; can: readonly ServerCapability[]}[] }   // secret is RESOLVED
+  sessions: { cache: {maxLoaded: number; idleTtl: number /*ms*/}; mailboxLimit: number }
+  store: {kind: 'memory'} | {kind: 'sqlite'; sqlite: {path: string; journal: 'wal'}}   // memory: no `sqlite` key at all
+  games: { searchPaths: readonly string[] }
+  limits: { cascadeCap: {default: number; max: number}; hook: {timeout: number /*ms*/; costBudget: number} }
+  logging: { level: 'debug'|'info'|'warn'|'error'; format: 'json'|'text' }
+}
+definitionLimitsFromConfig(config): DefinitionLimits   // {cascadeCapMax: limits.cascadeCap.max, costBudgetMax: limits.hook.costBudget}; pass as `limits` to createFilesystemDefinitionRegistry / compileDefinition
+redactServerConfig(config): ServerConfig               // copy with every secret = '<redacted>'; the only form to log. REDACTED = '<redacted>'
+```
+- Defaults and ranges: exactly §7.5 (defaults: host `0.0.0.0`, port 8080, 200 subscribers, queue 256, cache 5000 / `15m` = 900000, mailbox 128, store sqlite `/data/engine.db` wal, search paths `['/app/games']`, cascade 16/256, timeout 250, cost budget 2000000, logging info/json). Exceptions: D-034 (`cascade_cap.default` schema range is 1-4096, cross rule enforces 256).
+- Pipeline: `parseYaml` (YAML errors forwarded with their code, path `""`/node path) -> interpolate `${NAME}` in string VALUES only (keys never) recording provenance -> strict zod parse -> cross-field rules (only if all fields valid). ENV errors are returned alone (D-032). Never throws, no I/O, no `process.env`.
+- **Redaction rule**: in `CONFIG_INVALID` details the offending value is `<redacted>` when the value came wholly or partly from interpolation or the path is `auth.keys[n].secret`. Detail format `expected <expectation>; got <value>`; unknown key -> `unknown key`; missing -> `required key is missing`; `ENV_MISSING` -> `environment variable NAME is not set`; `ENV_SYNTAX` -> offset only. No message ever contains an env value or a secret (tests scan every message).
+- Error paths: dotted keys, `[i]` for list items (`auth.keys[0].secret`, `games.search_paths[2]`, `auth.keys[0].can[1]`). Unknown key path = `<parent>.<key>`. Cross-field: cascade -> `limits.cascade_cap.default` (detail names `limits.cascade_cap.max`); memory+sqlite -> `store.sqlite` (names `store.kind`); duplicate id -> later `auth.keys[i].id` (names the first); duplicate search path -> later `games.search_paths[i]` (names the first).
+- At most 100 errors (truncated, no flag). Secret must be exactly one `${NAME}` in the source; literal secret -> `CONFIG_INVALID` redacted. In YAML flow mappings quote placeholders: `secret: "${KEY}"` (D-033).
+- Test file `server-config.test.ts` (VC-260..263, 68 tests); `server-config.ts` passes the VC-235 scan.
+
 ## Guardrail and package state (Iteration 6; yaml added in 7)
 - **Check 4 (skeleton purity)** exempts `packages/core` and `packages/config`; every other package stays `export {}`/re-exports only.
 - **Check 5** (exact devDependency versions, single vitest/fast-check) is unchanged.
@@ -204,7 +229,7 @@ git diff 3bbdd4a -- packages/core/src/replay/canonical/golden-vectors.json   # m
 ## Known gaps
 - VC-230 is asserted both on objects (core) and on YAML text (config, iteration 7). Not covered by text tests: a `hooks.module`-only edit (needs the bundle path, iteration 9).
 - VC-275 is fully asserted (compile/hash in core, parse parts in config; measured 1 MiB parse+compile median 379 ms, rejection ~0.001 ms in strict mode). DNFR-002 in the Docker `test` target is measured in iteration 12. `definitionIdentitySchema` is not exported from the package root (relative import from `core/definition`/`replay/canonical`).
-- `zod` and server config (10), Docker `bundle:games` wiring and `pnpm bundle:games` in the build stage (11), docs (12). `esbuild`, the bundle build, `bundle:games` and the DFR-045 static test are done (iteration 8). `games/` does not exist yet (P8a).
+- Server config is done (10); Docker `bundle:games` wiring and `pnpm bundle:games` in the build stage (11), docs (12). `esbuild`, the bundle build, `bundle:games` and the DFR-045 static test are done (iteration 8). `games/` does not exist yet (P8a).
 - Stale docs listed under Current state — Iteration 12.
 
 ## Fixtures: hook games (Iteration 8; `packages/config/fixtures/hook-games/`)

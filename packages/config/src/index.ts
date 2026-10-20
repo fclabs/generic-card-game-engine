@@ -16,3 +16,21 @@ export type {
   FilesystemRegistryLoad,
   FilesystemRegistryOptions,
 } from "./registry.js";
+export {
+  CONFIG_ERROR_CODES,
+  REDACTED,
+  SERVER_CAPABILITIES,
+  definitionLimitsFromConfig,
+  loadServerConfig,
+  redactServerConfig,
+} from "./server-config.js";
+export type {
+  ConfigError,
+  ConfigErrorCode,
+  LogFormat,
+  LogLevel,
+  ServerAuthKey,
+  ServerCapability,
+  ServerConfig,
+  ServerStoreConfig,
+} from "./server-config.js";
