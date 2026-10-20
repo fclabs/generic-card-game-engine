@@ -57,3 +57,8 @@ export {
   collectHookReferences,
   definitionNeedsBundle,
 } from "./compile/references.js";
+export {
+  computeDefinitionId,
+  definitionContentHash,
+  hookBundleHash,
+} from "./identity.js";

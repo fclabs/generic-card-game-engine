@@ -99,3 +99,17 @@ Append-only. Entry format: `## D-NNN: <title>  (Iteration N)` with Context, Deci
 **Decision.** The VC-210 fixture is the TS object `FULL_DEFINITION` in `compile/full-definition.testing.ts` (with `FULL_BUNDLE`). The two iteration-3 tests "compiles it to {} (known gap)" in `zones.test.ts` and `counters.test.ts` now assert the compiled rules. VC-228's "`definitionContentHash` does not throw" property uses `canonicalize(definitionIdentitySchema, definitionData(v))` because the hasher arrives in iteration 5; iteration 5 should re-point it to the hasher.
 **Rejected.** Committing a `.yaml` fixture now (no YAML parser until iteration 7).
 **Consequences.** Iteration 5 updates the VC-228 property.
+
+## D-015: Identity function details  (Iteration 5)
+
+**Context.** DFR-042/043 say exports are "sorted, distinct" and `bundleHash` optional, but not what `hookBundleHash` does with unsorted or repeated input.
+**Decision.** `hookBundleHash` sorts (default UTF-16 code-unit order, same as the manifest) and de-duplicates `exports` before hashing, so VC-232's "export order does not matter" holds for any caller. `computeDefinitionId` builds `{contentHash}` and adds the `bundleHash` key only when it is not `undefined` (the `optional` node omits an absent key). Both schemas (`bundleIdentitySchema`, `idIdentitySchema`) are exported from `definition/identity.ts` and not from the package root; the three functions are exported from `core/definition` and the root.
+**Rejected.** Throwing on unsorted or duplicate exports (the bundler iteration sorts anyway; hashing must be total); exporting the schemas from the root (not needed by consumers).
+**Consequences.** Iteration 8 may pass the manifest list as is; iteration 9 recomputes ids with the same functions.
+
+## D-016: Floor fixture, expected hashes and child-process script placement  (Iteration 5)
+
+**Context.** The plan asks for a floor fixture under `fixtures/`, committed expected values, and a child-process script "under the test directory". `packages/core/**/*.{ts,js,mjs}` except `*.test.ts` is in the determinism lint scope, which forbids `node:fs` and `process`; the perf test needs `performance.now`.
+**Decision.** The floor fixture is a JSON document (`fixtures/floor-definition.json`, raw parsed form, 40 counters including 2 derived) read by tests with `readFileSync`; expected hashes are `definition/identity-expected.json`. The child script is a string constant in `identity.test.ts` executed with `node --input-type=module -e` against `dist`. Timing follows `session/floor-performance.test.ts`: strict 250 ms bounds under `/.dockerenv` or `CGE_PERF_STRICT=1`, otherwise a 10x ceiling; the measured medians are printed with `console.info`.
+**Rejected.** A `.mjs` helper beside the tests (fails lint); a `.ts` fixture (a JSON file is also what iteration 7 can re-parse as text and is accepted by Prettier); adding lint exemptions.
+**Consequences.** Iteration 7 can write the YAML twin of the floor fixture and assert the same `floor` hash from `identity-expected.json`.

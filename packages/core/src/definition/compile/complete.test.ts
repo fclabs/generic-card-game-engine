@@ -1,11 +1,10 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { canonicalize } from "../../replay/canonical/canonicalize.js";
-import { definitionIdentitySchema } from "../../replay/canonical/definition-schema.js";
 import { createSession } from "../../session/create.js";
 import { sessionId } from "../../session/ids.js";
 import { assertDefinitionStructure } from "../assert.js";
 import { definitionData } from "../data.js";
+import { definitionContentHash } from "../identity.js";
 import { compileDefinition } from "./compile.js";
 import {
   codePaths,
@@ -431,7 +430,7 @@ describe("VC-228 canonical-profile guard (ok implies identity)", () => {
             }),
           );
           if (!r.ok) return true;
-          canonicalize(definitionIdentitySchema, definitionData(r.value));
+          definitionContentHash(r.value);
           return true;
         },
       ),

@@ -1,0 +1,27 @@
+{
+  "contentHashes": {
+    "full": "11bf4291c3fd3c16e365e4c7e0c8d68ac1d2e3f54a3c553407ed15081820e3b4",
+    "floor": "4406f94ae1a53065521b84d858a7bf4fde54b66d32329113ff68cf7ac1c97dbe"
+  },
+  "bundles": [
+    {
+      "text": "export const a = 1;\nexport const b = 2;\n",
+      "exports": ["a", "b"],
+      "hash": "3aa94fa4a6fa1846e9068503ec959e2ba5874db7dbbbfb204ffa1aac6c548306"
+    },
+    {
+      "text": "",
+      "exports": [],
+      "hash": "cddfed8de67209bacf52c9997ef6071d70c1eeb01c0b49712d42d0ae4ecbf8a7"
+    },
+    {
+      "text": "export function validatePlay() {}\n",
+      "exports": ["validatePlay"],
+      "hash": "303a3183498bd0bd97fb96ddd52de7d60f8edd883bb4e230c80fd593dd317243"
+    }
+  ],
+  "ids": {
+    "noBundle": "sha256:80577dff010b6d810361f4a2a99259ff89e6e0070f7f5f48c6aee2640c813be6",
+    "withBundle": "sha256:b67f3bd2d21d87c5abb5f5ae96dced150024ce62cd6528d69349438a4ae2507e"
+  }
+}
