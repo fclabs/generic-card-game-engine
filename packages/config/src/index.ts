@@ -11,3 +11,8 @@ export {
   HOOKS_MANIFEST_PATH,
 } from "./bundle.js";
 export type { BundleGameOutcome } from "./bundle.js";
+export { createFilesystemDefinitionRegistry } from "./registry.js";
+export type {
+  FilesystemRegistryLoad,
+  FilesystemRegistryOptions,
+} from "./registry.js";

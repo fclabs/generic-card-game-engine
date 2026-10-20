@@ -184,3 +184,31 @@ Append-only. Entry format: `## D-NNN: <title>  (Iteration N)` with Context, Deci
 **Rejected.** An env var override (an argument is enough and explicit); stopping at the first failure; a `.ts` seed (would need lint exclusion and be compiled).
 **Consequences.** Games under `games/` (P8a) are linted and cruised normally; only `packages/config/fixtures` is excluded.
 
+
+## D-027: Perf fixture generated at test time, not committed  (Iteration 9)
+
+**Context.** The plan allows committing `fixtures/perf-20-games/` or generating in `beforeAll`; VC-244 says "committed". Each game needs a built `dist/hooks.js`, and `dist/` is git-ignored (DFR-044 outputs).
+**Decision.** `perf-fixture.testing.ts` generates 20 games (and builds their bundles with `buildHookBundle`) into `os.tmpdir()` in `beforeAll`; the directory is removed in `afterAll`. The generator is deterministic; the test asserts 52 cards, 6 zones, 4 counters and a bundle of 4096..6000 bytes.
+**Rejected.** Committing 20 dirs (hand-maintained duplicates; the bundles would still need building and are ignored by git); un-ignoring `dist/` for the fixture (inconsistent with the repo rule).
+**Consequences.** The VC-244 "committed fixture" wording is met by a committed generator.
+
+## D-028: Registry error-path prefix and identity of sources  (Iteration 9)
+
+**Context.** DFR-051 requires each error to be "prefixed by its game directory" but `DefinitionError` has only `path`/`detail`/`entity`.
+**Decision.** Prefix goes into `path`: `<gameDir>` for a root error, else `<gameDir>/<path>`, with `<gameDir>` = `join(searchPath, dirName)`. `GAME_ID_MISMATCH` uses path `id`, `GAME_YAML_MISSING` path `game.yaml`, duplicate id path `<dir>/id` (the later directory is the error). `resolve` caches the raw bytes (`game.yaml`, and bundle js/manifest only if the game used a bundle) and returns the cached definition when they are byte-identical; any difference triggers a full reload and id comparison.
+**Rejected.** Prefixing `detail` (breaks the path/detail contract); comparing mtimes (unreliable); hashing instead of storing bytes (bytes are small, comparison is exact).
+**Consequences.** Config tooling (`config:check`, iteration 11) prints `<path>: <code>: <detail>` and gets the directory for free. A comment-only edit refreshes the cached bytes.
+
+## D-029: Missing or malformed bundle files at load; manifest dependency  (Iteration 9)
+
+**Context.** DFR-051 reads the bundle only when needed; it does not say what to report when the files are absent or the manifest is malformed.
+**Decision.** Absent `dist/hooks.js` or manifest -> no `HookBundleInfo` is passed and the compiler reports `BUNDLE_MISSING` (DFR-024, naming the first reference); a present but malformed manifest -> `BUNDLE_INVALID` at `dist/hooks.manifest.json`, and the compile then also runs without a bundle (so `BUNDLE_MISSING` may follow). The manifest bytes are not hashed, only its export list (as in iteration 8).
+**Rejected.** Reporting `BUNDLE_INVALID` for absent files (spec assigns `BUNDLE_MISSING`); re-running esbuild in the registry (writes files, D-024).
+**Consequences.** An author who forgot `pnpm bundle:games` gets a path-bearing `BUNDLE_MISSING` per game, aggregated with other games' errors.
+
+## D-030: Contract suite fixture shape  (Iteration 9)
+
+**Context.** DFR-054 asks for a suite parameterised by a factory; the edits (change YAML, flip a bundle byte) are adapter-specific.
+**Decision.** The factory returns `{registry, id, expected, edits, dispose}` (see CONTEXT.md); the suite owns assertions, the adapter owns mutation. `bundleByte` is optional. Production tsconfig for `packages/config` now excludes `src/**/*.testing.ts` (as `packages/core` does), `tsconfig.test.json` still type-checks them.
+**Rejected.** A suite that edits files itself (not portable); exporting the suite from the package (test-only code in `exports`).
+**Consequences.** P14 can move the file to a shared location (OQ-4) without changing its signature.
