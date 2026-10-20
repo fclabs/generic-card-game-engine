@@ -5,3 +5,4 @@ LICENSE
 dist/
 coverage/
 tools/guardrails/fixtures/**
+packages/config/fixtures/**

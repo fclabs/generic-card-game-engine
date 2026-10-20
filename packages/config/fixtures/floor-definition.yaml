@@ -1,0 +1,237 @@
+# YAML twin of packages/core/src/definition/fixtures/floor-definition.json (id floor).
+id: floor
+action_schema_version: 1
+seats:
+  list:
+    - id: s01
+      team: t1
+    - id: s02
+      team: t2
+    - id: s03
+      team: t3
+    - id: s04
+      team: t4
+    - id: s05
+      team: t1
+    - id: s06
+      team: t2
+    - id: s07
+      team: t3
+    - id: s08
+      team: t4
+    - id: s09
+      team: t1
+    - id: s10
+      team: t2
+    - id: s11
+      team: t3
+    - id: s12
+      team: t4
+    - id: s13
+      team: t1
+    - id: s14
+      team: t2
+  teams:
+    - t1
+    - t2
+    - t3
+    - t4
+zones:
+  - id: stock
+    ordering: ordered
+    visibility:
+      default: hidden
+  - id: discard
+    ordering: ordered
+    visibility:
+      default: public
+  - id: hand-{seat}
+    for_each: seat
+    owner_id: "{seat}"
+    ordering: unordered
+    visibility:
+      default: hidden
+      player: owner
+  - id: tableau-{seat}
+    for_each: seat
+    owner_id: "{seat}"
+    ordering: ordered
+    visibility:
+      default: public
+  - id: team-{team}
+    for_each: team
+    owner_id: "{team}"
+    ordering: unordered
+    visibility:
+      default: hidden
+      player: team
+  - id: pile-01
+    ordering: ordered
+  - id: pile-02
+    ordering: unordered
+  - id: pile-03
+    ordering: ordered
+  - id: pile-04
+    ordering: unordered
+  - id: pile-05
+    ordering: ordered
+  - id: pile-06
+    ordering: unordered
+  - id: pile-07
+    ordering: ordered
+  - id: pile-08
+    ordering: unordered
+  - id: pile-09
+    ordering: ordered
+  - id: pile-10
+    ordering: unordered
+  - id: pile-11
+    ordering: ordered
+  - id: pile-12
+    ordering: unordered
+  - id: pile-13
+    ordering: ordered
+  - id: pile-14
+    ordering: unordered
+  - id: pile-15
+    ordering: ordered
+  - id: pile-16
+    ordering: unordered
+  - id: pile-17
+    ordering: ordered
+  - id: pile-18
+    ordering: unordered
+  - id: pile-19
+    ordering: ordered
+  - id: pile-20
+    ordering: unordered
+  - id: pile-21
+    ordering: ordered
+  - id: pile-22
+    ordering: unordered
+  - id: pile-23
+    ordering: ordered
+  - id: pile-24
+    ordering: unordered
+  - id: pile-25
+    ordering: ordered
+  - id: pile-26
+    ordering: unordered
+  - id: pile-27
+    ordering: ordered
+  - id: pile-28
+    ordering: unordered
+  - id: pile-29
+    ordering: ordered
+  - id: pile-30
+    ordering: unordered
+cards:
+  - generate:
+      axes:
+        - name: deck
+          values:
+            range:
+              - 1
+              - 5
+        - name: suit
+          values:
+            - S
+            - H
+            - D
+            - C
+        - name: rank
+          values:
+            range:
+              - 1
+              - 35
+      id: d{deck}{suit}{rank}
+      type: "{suit}"
+      zone: stock
+      metadata:
+        deck: "{deck}"
+        suit: "{suit}"
+        rank: "{rank}"
+      metadata_schema:
+        deck:
+          type: int
+          visibility: public
+        suit:
+          type: string
+          visibility: public
+        rank:
+          type: int
+          visibility: subject
+counters:
+  - id: chips-{seat}
+    for_each: seat
+    owner: player
+    owner_id: "{seat}"
+    min: 0
+    max: "1000000000000000000000"
+    initial: 100
+    scale: 2
+    rounding: half_even
+    visibility:
+      default: public
+  - id: score-{seat}
+    for_each: seat
+    owner: player
+    owner_id: "{seat}"
+    min: -1000
+    initial: 0
+  - id: team-score-{team}
+    for_each: team
+    owner: team
+    owner_id: "{team}"
+    min: 0
+    initial: 0
+  - id: pot
+    owner: table
+    min: 0
+    initial: 0
+    visibility:
+      default: public
+  - id: bank
+    owner: table
+    min: 0
+    initial: 0
+    supply_role: mint
+  - id: burned
+    owner: table
+    min: 0
+    initial: 0
+    supply_role: burn
+  - id: round
+    owner: table
+    min: 0
+    max: 100
+    initial: 1
+  - id: trick
+    owner: table
+    min: 0
+    max: 52
+    initial: 0
+  - id: turns
+    owner: table
+    min: 0
+    initial: 0
+  - id: stock_size
+    derived:
+      zone_size: stock
+    visibility:
+      default: public
+  - id: discard_size
+    derived:
+      zone_size: discard
+    visibility:
+      default: public
+conservation_groups:
+  - id: chips
+    counters:
+      - pot
+      - expand: chips-{seat}
+        for_each: seat
+policies:
+  cascade_cap: 32
+  cost_budgets:
+    validation: 500000

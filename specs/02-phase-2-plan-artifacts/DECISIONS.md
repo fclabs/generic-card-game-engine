@@ -127,3 +127,31 @@ Append-only. Entry format: `## D-NNN: <title>  (Iteration N)` with Context, Deci
 **Decision.** Check 6 keeps its `@cge/*`+`workspace:` rule and adds a single exception branch keyed on the exact path `packages/config/package.json` and a constant name list, validated with the same `EXACT_VERSION` regex as check 5. Skeleton purity exempts config via a list of exempt package roots. New tests are table-free temp-repo cases; the VC-274 case is a new depcruise fixture dir rather than an edit of the Phase 0 one.
 **Rejected.** Pinning the dependency set to exactly three (allowance only; presence is VC-271, iteration 11/12); allowing the names in devDependencies handling (check 5 untouched).
 **Consequences.** Adding a fourth dependency or a range needs a guardrail change and is a spec change.
+
+## D-019: `yaml` version and lockfile change  (Iteration 7)
+
+**Context.** Plan: add the latest stable `yaml` with an exact version (DFR-080, A1).
+**Decision.** `yaml@2.9.1` (`npm view yaml version` at execution time), added with `pnpm --filter @cge/config add --save-exact yaml@2.9.1`; `dependencies` of `@cge/config` = `@cge/core` (`workspace:*`) + `yaml` `2.9.1`. `fast-check@4.10.2` was added to config `devDependencies` (same exact version as core/root) because config tests import it and depcruise `no-undeclared-deps` fails otherwise. `pnpm-lock.yaml`: new `packages/config` entries for `yaml`, plus every package's `vitest` snapshot id gained `(yaml@2.9.1)` because vite's optional `yaml` peer now resolves; no build script needed approval.
+**Rejected.** A range or `^` (check 6 and DFR-080); hand-written YAML parsing; omitting the fast-check devDependency by relying on root hoisting (depcruise fails).
+**Consequences.** `pnpm install --frozen-lockfile` passes. Iterations 8 and 10 add `esbuild`/`zod` the same way.
+
+## D-020: How aliases are counted and bounded  (Iteration 7)
+
+**Context.** DFR-002 limits "alias references" to `maxAliases` (100, inclusive: 100 ok, 101 fails). The library's own `maxAliasCount` is a product (references x nesting weight), not a count, and is applied only in `toJS`.
+**Decision.** Two layers. (1) Our AST walk counts every alias node (value and key position) and never follows an alias; the 101st fails `YAML_FORBIDDEN_FEATURE` once (`more than 100 aliases (limit maxAliases)`). (2) Because 100 aliases can still nest into an exponential expansion, `toJS` gets `maxAliasCount = maxAliases * 100` (10 000 by default); the library throws `ReferenceError`, mapped to `YAML_FORBIDDEN_FEATURE` ("alias expansion exceeds the limit"). The 1 KiB nine-level bomb (72 aliases) trips layer 2 in ~2.6 ms with <1 MiB RSS growth. `maxAliases: 0` forbids aliases.
+**Rejected.** Using only the library guard (101 flat aliases would pass); disabling the guard (a nested bomb with <= 100 aliases would materialise); deep-cloning shared alias results (would re-introduce expansion cost).
+**Consequences.** Documents with deeply nested alias reuse beyond the 10 000 weight fail even under 100 references; acceptable for definitions. Aliased subtrees share one JS object in the result.
+
+## D-021: Forbidden features beyond the list, error positions and paths  (Iteration 7)
+
+**Context.** DFR-004/005 name positions but `DefinitionError` has only `path`/`detail`/`entity`.
+**Decision.** Position is appended to `detail` as ` (line L, column C)`; `path` is `""` for size and parser errors and the node path for AST errors (duplicate key: `parent.key`). Multi-document (`MULTIPLE_DOCS`) and `<<` (any key whose string value is `<<`, quoted or not, since merge is off) are `YAML_FORBIDDEN_FEATURE`; a `%YAML` directive other than 1.2, non-finite numbers (`.inf`, `.nan`) and complex/null/bool/number keys are also `YAML_FORBIDDEN_FEATURE` (spec: output is finite numbers only). The scalar document `~`/`42` is accepted (the compiler rejects a non-mapping root). A parser error returns before the AST walk; an AST walk reports all its errors. Pathological nesting that overflows the stack surfaces as `YAML_SYNTAX` (capped at 100 errors) instead of throwing.
+**Rejected.** Adding `line`/`column` fields to `DefinitionError` (frozen shape, iteration 2); a nesting-depth rule (not in the spec).
+**Consequences.** Config loaders (iterations 9-10) can forward `detail` verbatim; they prefix the file/game dir themselves.
+
+## D-022: Fixture location and exclusion  (Iteration 7)
+
+**Context.** Fixtures must be inert for lint/format/depcruise like `tools/guardrails/fixtures`.
+**Decision.** `packages/config/fixtures/` contains only `.yaml` data, which ESLint (`.ts`/`.js` only), `tsc` and depcruise already ignore; `.prettierignore` gains `packages/config/fixtures/**` so Prettier never rewrites deliberately odd YAML (comments, spacing, anchors). No eslint or depcruise config change. The floor YAML twin is generated from the JSON fixture once and committed; 1 MiB documents are built in tests.
+**Rejected.** Adding the directory to the eslint/depcruise ignore lists (nothing there to ignore; would hide future `.ts` mistakes).
+**Consequences.** A future `.ts`/`.js` file placed in `fixtures/` WOULD be linted and cruised; keep fixtures as data.

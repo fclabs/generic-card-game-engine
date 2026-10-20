@@ -1,0 +1,41 @@
+# Same definition as base.yaml: other key order, comments, extra whitespace,
+# an anchor reused through an alias, and the documented defaults written out.
+control:
+  enforce_active_seats: false   # the default
+  phases: [main]                # the default
+  initial_phase: main
+
+
+cards:
+  - generate:
+      metadata_schema: &fields
+        rank: { visibility: public, type: int }
+        suit: { visibility: public, type: string }
+      zone: stock
+      type: "{suit}"
+      id: "{suit}{rank}"
+      metadata: { rank: "{rank}", suit: "{suit}" }
+      axes:
+        - values: [S, H, D, C]
+          name: suit
+        - values: { range: [1, 13] }
+          name: rank
+  - generate:
+      metadata_schema: *fields   # alias of the schema above
+      zone: trash
+      type: "{suit}"
+      id: "T{suit}{rank}"
+      metadata: { rank: "{rank}", suit: "{suit}" }
+      axes:
+        - values: [S, H, D, C]
+          name: suit
+        - values: { range: [1, 13] }
+          name: rank
+zones:
+  - ordering: ordered
+    id: stock
+  - ordering: unordered
+    id: trash
+seats: { count: 4 }
+action_schema_version: 1
+id: hearts
