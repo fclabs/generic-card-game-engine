@@ -155,3 +155,32 @@ Append-only. Entry format: `## D-NNN: <title>  (Iteration N)` with Context, Deci
 **Decision.** `packages/config/fixtures/` contains only `.yaml` data, which ESLint (`.ts`/`.js` only), `tsc` and depcruise already ignore; `.prettierignore` gains `packages/config/fixtures/**` so Prettier never rewrites deliberately odd YAML (comments, spacing, anchors). No eslint or depcruise config change. The floor YAML twin is generated from the JSON fixture once and committed; 1 MiB documents are built in tests.
 **Rejected.** Adding the directory to the eslint/depcruise ignore lists (nothing there to ignore; would hide future `.ts` mistakes).
 **Consequences.** A future `.ts`/`.js` file placed in `fixtures/` WOULD be linted and cruised; keep fixtures as data.
+
+## D-023: esbuild version  (Iteration 8)
+
+**Context.** DFR-080/A1: exact runtime dependency in `packages/config`; A3: output is deterministic for fixed version, inputs and options.
+**Decision.** `esbuild@0.28.2` (`npm view esbuild version` at execution time), `pnpm --filter @cge/config add --save-exact esbuild@0.28.2`; `dependencies` = `@cge/core` `workspace:*`, `esbuild` `0.28.2`, `yaml` `2.9.1`. pnpm 10 needed no build-script allowance (the binary comes from the platform optional package, `@esbuild/darwin-arm64`), so `pnpm-workspace.yaml` is unchanged; `pnpm-lock.yaml` committed.
+**Rejected.** A range or `^`; `onlyBuiltDependencies` entry (not needed).
+**Consequences.** A version bump can change bundle bytes and hence every `DefinitionId` with a bundle; treat it like a schema change. The Docker image (iteration 11) must install the same platform binary (linux), which `pnpm install --frozen-lockfile` does.
+
+## D-024: Deterministic, path-independent build options  (Iteration 8)
+
+**Context.** DFR-044 requires no minification, no source map, ES2022, no absolute paths or timestamps; DBR-001 forbids build paths from influencing the id.
+**Decision.** Options listed in CONTEXT.md. Key points: build with `absWorkingDir = <gameDir>` and a relative entry so esbuild's only path comments are `// hooks.ts`, `// helper.ts` (relative); `write: false` and we write the bytes (no esbuild file I/O, exact control of the manifest); `tsconfigRaw: {}` so no tsconfig.json found above a game (the repo's own tsconfig would otherwise change output); `legalComments: none`, `charset: utf8` (no `\u` escaping drift); `platform: neutral` (no Node assumptions; hook code is later run in a sandbox, P4). Manifest is `JSON.stringify({exports})` + `\n`. Verified by test: copying a game to another directory yields identical `hooks.js`, manifest and hash.
+**Rejected.** `outdir` with esbuild writing files; `platform: node` (would allow bare Node builtins imports in hooks); minify (spec); relying on the repo tsconfig; `bundle` output path normalisation by post-processing (not needed).
+**Consequences.** A hook importing a file outside its game dir gets a `// ../x.ts` relative comment, still path-independent only if the relative layout is kept. TypeScript type errors are not reported (esbuild transpiles only); `pnpm typecheck` does not cover `games/` hooks until P8a adds them.
+
+## D-025: Reading of "a module with no exports"  (Iteration 8)
+
+**Context.** DFR-044: "a module with no exports (when the YAML references any)" fails `BUNDLE_INVALID`.
+**Decision.** `BUNDLE_INVALID` iff `collectHookReferences(raw)` is non-empty and the built module's export list (from the esbuild metafile) is empty. A module without exports is accepted when the YAML has no references (empty manifest). Whether each reference is in the export list is the compiler's job (`UNKNOWN_HOOK_EXPORT`, `BUNDLE_MISSING`), not the builder's. `hooks.module` itself is not "a reference" for this check.
+**Rejected.** Failing every empty module; checking each reference name in the builder (duplicates the compiler, and the builder has no compile context).
+**Consequences.** Iteration 9 loads `dist/` files, computes the hash again from the bytes and the manifest, and relies on the compiler for name checks.
+
+## D-026: Fixture exclusion, bundle:games interface  (Iteration 8)
+
+**Context.** Fixture games contain `hooks.ts`, which ESLint (type-aware project list) and dependency-cruiser would pick up; plan asks to follow the existing exclusion mechanism.
+**Decision.** `packages/config/fixtures/**` added to the ESLint `ignores` and `fixtures` path to the depcruise `exclude` (same two places as `tools/guardrails/fixtures`); Prettier already ignored it (D-022); `tsc` includes only `src`. `bundle:games` takes the games root as the first positional argument (default `./games`), root script `pnpm build && node packages/config/dist/bundle-games.js`, documented in `docs/dev-setup.md`. It continues after a failure and reports every failing game (superset of "the first"). The VC-235 seed is a `.txt` file so no extra exclusion is needed for it.
+**Rejected.** An env var override (an argument is enough and explicit); stopping at the first failure; a `.ts` seed (would need lint exclusion and be compiled).
+**Consequences.** Games under `games/` (P8a) are linted and cruised normally; only `packages/config/fixtures` is excluded.
+

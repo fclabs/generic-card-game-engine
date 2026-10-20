@@ -1,0 +1,6 @@
+id: broken
+action_schema_version: 1
+seats: { count: 2 }
+hooks:
+  module: ./hooks.ts
+  validation: { play_card: validatePlay }

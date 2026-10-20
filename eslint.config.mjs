@@ -11,6 +11,7 @@ export default tseslint.config(
       "**/node_modules/**",
       "coverage/**",
       "tools/guardrails/fixtures/**",
+      "packages/config/fixtures/**",
     ],
   },
   eslint.configs.recommended,

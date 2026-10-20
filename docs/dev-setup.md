@@ -49,6 +49,7 @@ Several scripts begin with `pnpm build` so a clean checkout never needs a separa
 | `test:guardrails` | Build, then Vitest over `tools/guardrails` | Exit 0; lint/depcheck fixtures and repo invariants hold |
 | `test:all` | `pnpm test` then `pnpm test:guardrails` | Exit 0 only if both succeed |
 | `test:coverage` | Same as `test` with V8 coverage | Exit 0; writes `coverage/` (git-ignored) |
+| `bundle:games` | Build, then `node packages/config/dist/bundle-games.js [gamesRoot]`: builds `dist/hooks.js` and `dist/hooks.manifest.json` for every `games/<id>/` whose `game.yaml` sets `hooks.module` (default root `games`) | Exit 0 (also when there are no games); exit 1 naming each failing game. Bundles are built and hashed, never executed |
 
 Prettier ignores `docs/**`, the lockfile, `LICENSE`, `dist/`, `coverage/`, and guardrail fixtures (plus a few other tracked trees listed in `.prettierignore`). Markdown under `docs/` is left untouched by `format` / `format:check`.
 

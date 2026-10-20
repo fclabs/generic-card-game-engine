@@ -1,0 +1,4 @@
+// Seeded violation for the VC-235 static test. Inert: the .txt extension keeps it out of lint and tsc.
+export async function runBundle(bundlePath: string): Promise<unknown> {
+  return await import(bundlePath);
+}
