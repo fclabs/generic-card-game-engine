@@ -14,6 +14,12 @@ const PINNED_NODE_IMAGE =
   /^node:22\.\d+\.\d+-alpine\d+\.\d+(?:@sha256:[a-f0-9]+)?$/;
 const FLOATING_NODE_IMAGE = /^node:22(?:-alpine)?(?:@sha256:[a-f0-9]+)?$/;
 const WORKSPACE_DEP = /^workspace:/;
+/** DFR-080: the only runtime dependencies allowed, and only in packages/config. */
+const CONFIG_RUNTIME_DEPENDENCIES: readonly string[] = [
+  "yaml",
+  "zod",
+  "esbuild",
+];
 
 type PackageJson = {
   name?: unknown;
@@ -294,13 +300,16 @@ function isAllowedSkeletonStatement(stmt: ts.Statement): boolean {
 
 /**
  * FR-043 check 4 / BR-006 — non-test package sources are skeleton-only.
- * Phase 1 exempts `packages/core` only (spec 01-phase-1 §6.5).
+ * Phase 1 exempts `packages/core` (spec 01-phase-1 §6.5); Phase 2 also exempts
+ * `packages/config` (spec 02-phase-2 DFR-080).
  */
 export function checkSkeletonPurity(repoRoot: string): CheckResult {
   const packagesRoot = path.join(repoRoot, "packages");
-  const coreRoot = path.join(packagesRoot, "core") + path.sep;
+  const exemptRoots = ["core", "config"].map(
+    (name) => path.join(packagesRoot, name) + path.sep,
+  );
   const files = collectNonTestTsFiles(packagesRoot).filter(
-    (f) => !f.startsWith(coreRoot),
+    (f) => !exemptRoots.some((root) => f.startsWith(root)),
   );
   for (const filePath of files) {
     const text = fs.readFileSync(filePath, "utf8");
@@ -380,14 +389,33 @@ export function checkDevDependencyVersions(repoRoot: string): CheckResult {
   return pass();
 }
 
-/** FR-043 check 6 / BR-009 — dependencies are workspace-protocol @cge/* only. */
+/**
+ * FR-043 check 6 / BR-009 — dependencies are workspace-protocol @cge/* only,
+ * except DFR-080: `packages/config/package.json` may also carry `yaml`, `zod`
+ * and `esbuild` as runtime dependencies, each at an exact `\d+\.\d+\.\d+` version.
+ */
 export function checkWorkspaceDependencies(repoRoot: string): CheckResult {
+  const configPkgPath = path.join(
+    repoRoot,
+    "packages",
+    "config",
+    "package.json",
+  );
   for (const pkgPath of allPackageJsonPaths(repoRoot)) {
     const pkg = readJson(pkgPath);
     const rel = path.relative(repoRoot, pkgPath);
+    const isConfig = pkgPath === configPkgPath;
     const deps = pkg.dependencies ?? {};
     for (const [name, version] of Object.entries(deps)) {
       if (!name.startsWith("@cge/")) {
+        if (isConfig && CONFIG_RUNTIME_DEPENDENCIES.includes(name)) {
+          if (!EXACT_VERSION.test(version)) {
+            return fail(
+              `${rel}: runtime dependency ${JSON.stringify(name)} version ${JSON.stringify(version)} must match ^\\d+\\.\\d+\\.\\d+$ (DFR-080)`,
+            );
+          }
+          continue;
+        }
         return fail(
           `${rel}: dependency ${JSON.stringify(name)} is not a workspace @cge/* package (BR-009)`,
         );

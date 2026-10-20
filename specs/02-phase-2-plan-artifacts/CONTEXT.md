@@ -1,10 +1,10 @@
-# CONTEXT: Phase 2 (updated after Iteration 5)
+# CONTEXT: Phase 2 (updated after Iteration 6)
 
 ## Current state
 - Phase 0 workspace and Phase 1 domain kernel (`packages/core`) are shipped. Iteration 1 changed the P1 definition types, `createSession`, `assertDefinitionStructure`, reducer dispatch in `apply`, and the identity schema (DFR-060–066). Iterations 2-4 built the compiler: **`compileDefinition` is now complete** (every section of §7.1, `HookBundleInfo` checks, `ctx.limits`, identity validation and structural assertion before `ok`).
 - "ok implies identity valid": a successful compile has been run through `canonicalize(definitionIdentitySchema, definitionData(value))` and `assertDefinitionStructure`, so `definitionContentHash` never throws for it. Iteration 5 added content identity: `definitionContentHash`, `hookBundleHash`, `computeDefinitionId` (core, exported from the package root), with committed expected hashes and a floor-size perf fixture (compile and hash each ~4 ms vs the 250 ms bound).
-- No YAML, registry or config code exists yet; `packages/config` is still the Phase 0 skeleton (`src/index.ts`, `@cge/core` only). `packages/core/package.json` has no `dependencies`.
-- Every P1 test passes (`pnpm test`: 903 tests; 168 in `pnpm test:guardrails`); `golden-vectors.json`, `session/golden-stream.json`, `session/prng-vectors.json` are byte-identical to `3bbdd4a`.
+- Iteration 6 added the `DefinitionRegistry` port (types only) and prepared `packages/config` (node types, guardrail allowance for `yaml`/`zod`/`esbuild`). No YAML, registry implementation or config code exists yet; `packages/config/src/index.ts` is still `export {};` and its `dependencies` are `@cge/core` only. `packages/core/package.json` has no `dependencies`.
+- Every P1 test passes (`pnpm test`: 907 tests; 174 in `pnpm test:guardrails`); `golden-vectors.json`, `session/golden-stream.json`, `session/prng-vectors.json` are byte-identical to `3bbdd4a`.
 - Docs under `docs/` are NOT yet updated (Iteration 12 owns them); `docs/canonical-json-profile.md` (line ~121) and `docs/domain-kernel.md` still mention `definitionDataSchema` and the three removed flags.
 
 ## File map (packages/core/src, P1 as built + Iteration 1)
@@ -16,7 +16,7 @@
 - `definition/compile/` (Iteration 3): `zones.ts` (`compileZones`, `readForEach`), `cards.ts` (`compileCards`), `axes.ts` (`readAxes`, `Axis`), `template.ts` (`parseTemplate`, `renderTemplate`, `Segment`), `counters.ts` (`compileCounters`, `OwnerRefs`), `derived.ts` (`zoneSizeEvaluator`), `groups.ts` (`compileConservationGroups`), `fields.ts` (`readFieldMap`, field type/visibility lists), `json-value.ts` (`validateJsonValue`, `JSON_MAX_DEPTH`), `bigint.ts` (`readBigInt`), `visibility.ts` (STUB `compileVisibility`, `VisibilityTarget`); test helper `compile.testing.ts` (`doc`, `deckDoc`, `failure`, `success`, `codePaths`, `STOCK`, `SUIT_RANK_GENERATOR`); tests `zones.test.ts`, `cards.test.ts` (incl. VC-227), `counters.test.ts` (counters, derived, groups).
 - `definition/compile/` (Iteration 4): `roles.ts` (`compileRoles`, `BUILT_IN_ROLES`), `visibility.ts` (real `compileVisibility`, `AUDIENCES`), `control.ts` (`compileControl`), `meta.ts` (`compileMetaSchemas`, `readExportName`, `EXPORT_NAME`), `view-keys.ts`, `hooks.ts` (`compileHooks`), `policies.ts` (`compilePolicies`, `DEFAULT_CASCADE_CAP`), `references.ts` (`HookBundleInfo`, `extractReferences`, `collectHookReferences`, `definitionNeedsBundle`, `checkBundle`), `finalize.ts` (`verifyCompiled`); tests `control.test.ts` (VC-219), `meta-roles.test.ts` (VC-220/221/222), `hooks.test.ts` (VC-223/224/225/237 unit), `complete.test.ts` (VC-210/211/226/228/229); fixture `full-definition.testing.ts` (`FULL_DEFINITION`, `FULL_BUNDLE`).
 - `definition/identity.ts` (Iteration 5): `definitionContentHash`, `hookBundleHash`, `computeDefinitionId`, `bundleIdentitySchema`, `idIdentitySchema`; `identity.test.ts` (VC-230 object form + child process, VC-231, VC-232, VC-233, VC-255, VC-215 hash half); `identity-performance.test.ts` (VC-275 compile + hash); `identity-expected.json` (committed expected hashes); `fixtures/floor-definition.json` (floor fixture).
-- `ports/`, `spi/`, `errors/`, `visibility/` (empty barrel), `util/`.
+- `ports/` (`types.ts` + Iteration 6: `RegistryError`, `DefinitionSummary`, `DefinitionRegistry`; `ports.testing.ts` gained `inMemoryRegistry(map)`; `ports.test.ts` gained VC-240), `spi/`, `errors/`, `visibility/` (empty barrel), `util/`.
 
 ## Public interfaces (as committed)
 New exported types from `core/definition` and the package root: `FieldVisibility = 'public'|'subject'|'secret'`; `Audience = 'public'|'hidden'|'owner'|'team'`; `VisibilityRules = Readonly<Record<string, Audience>>`; `RoleDecl {id; subject: 'required'|'optional'|'forbidden'}`; `DerivedSpec = {kind:'zone_size'; zone: ZoneId}`.
@@ -85,6 +85,22 @@ bundleIdentitySchema = object([[js,string],[exports,array(string)]]); idIdentity
 
 **VC-230 child process**: the node script is a string constant inside `identity.test.ts` run with `node --input-type=module -e`, importing `packages/core/dist/index.js` (needs `pnpm build` first, which `pnpm test` does). It lives in the test file because only `*.test.ts` is exempt from the core determinism lint (a `.mjs` under `packages/core` would be linted for `node:fs`/`process`).
 
+## Public interfaces: registry port (Iteration 6; `core/ports`, exported from the package root; types only)
+```ts
+type RegistryError = { readonly code: 'UNKNOWN_DEFINITION' | 'DEFINITION_HASH_MISMATCH' | 'DEFINITION_INVALID'; readonly detail: string }
+type DefinitionSummary = { readonly definitionId: DefinitionId; readonly gameId: string; readonly schemaVersion: number }
+interface DefinitionRegistry { resolve(id: DefinitionId): Promise<Result<CompiledGameDefinition, RegistryError>> }  // Result from core/errors
+```
+The emitted JS of `core/ports` is `export {};`. `inMemoryRegistry` (test-only) is the VC-085-style stub; the real adapter (`createFilesystemDefinitionRegistry`) is iteration 9 in `packages/config`.
+
+## Guardrail and package state (Iteration 6)
+- **Check 4 (skeleton purity)** exempts `packages/core` and `packages/config`; every other package stays `export {}`/re-exports only.
+- **Check 5** (exact devDependency versions, single vitest/fast-check) is unchanged.
+- **Check 6 rule text** (`checkWorkspaceDependencies`): every `dependencies` entry must be a `@cge/*` package using the `workspace:` protocol, EXCEPT in `packages/config/package.json`, where `yaml`, `zod` and `esbuild` are also allowed and each must match `^\d+\.\d+\.\d+$` (no `^`, `~`, ranges, tags). Any other name (e.g. `lodash` in config) or any non-`@cge` dependency in another package (e.g. `yaml` in `packages/app`) fails naming the package and dependency. `packages/core` has no dependencies at all.
+- Guardrail fixtures added: 4 dependency tests (+1 skeleton-purity config test) in `tools/guardrails/repo-invariants.test.ts`; depcruise case `core-no-node-definition-node-fs` (VC-274: `import "node:fs"` in `packages/core/src/definition` fires `core-no-node`).
+- `packages/config/tsconfig.json` has `types: ["node"]`: `@cge/config` source may import `node:*` (`node:fs`, `node:path`, ...). `packages/core/tsconfig.json` stays `types: []`. Probed: code with `readFileSync` from `node:fs` in `packages/config/src` passes build, lint, typecheck, depcheck and guardrails (reverted). No lint or depcruise config change was needed.
+- **Dependency-adding procedure**: add each runtime dependency in the iteration that FIRST imports it (7: `yaml`, 8: `esbuild`, 10: `zod`), from the repo root with an exact version: `pnpm --filter @cge/config add --save-exact <name>@<version>` (check `package.json` shows no `^`), commit the updated `pnpm-lock.yaml`, then run `pnpm install --frozen-lockfile` to confirm. Only those three names, only in `packages/config`. Do not touch `docs/` for this (iteration 12).
+
 ## Error code -> source (compiler)
 | Code | Raised by |
 |------|-----------|
@@ -131,5 +147,5 @@ git diff 3bbdd4a -- packages/core/src/replay/canonical/golden-vectors.json   # m
 ## Known gaps
 - VC-230 on YAML text (anchors, key order, comments, whitespace, explicit defaults, child process on a `.yaml` file) is **deferred to iteration 7**: until `parseYaml` exists, VC-230 is asserted on JS objects (key-order reversal, shared object references standing in for anchors, explicit defaults, child process on JSON). Iteration 7 must add the YAML-text variants (including `hooks.module`-independent and comment-only edits) and may reuse `identity-expected.json` values.
 - VC-275 parse half (1 MiB parse+compile, 1 MiB+1 byte rejection) — Iteration 7. DNFR-002 in the Docker `test` target is measured in iteration 12. `definitionIdentitySchema` is not exported from the package root (relative import from `core/definition`/`replay/canonical`).
-- VC-237 hash part (leftover `dist`), registry port, config deps/guardrails (6), YAML, bundle, registry, server config, Docker, docs — Iterations 6–12.
+- VC-237 hash part (leftover `dist`), the three config dependencies (added in 7, 8, 10), YAML, bundle, registry, server config, Docker, docs — Iterations 6–12.
 - Stale docs listed under Current state — Iteration 12.

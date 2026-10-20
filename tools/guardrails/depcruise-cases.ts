@@ -97,6 +97,12 @@ export const depcruiseCases: readonly DepcruiseCase[] = [
     expect: ["core-no-node"],
     vc: "VC-032",
   },
+  // VC-274 (Phase 2): the rule still bites inside packages/core/src/definition
+  {
+    id: "core-no-node-definition-node-fs",
+    expect: ["core-no-node"],
+    vc: "VC-274",
+  },
   {
     id: "core-no-node-bare-path",
     expect: ["core-no-node"],

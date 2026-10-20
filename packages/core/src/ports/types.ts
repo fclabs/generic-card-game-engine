@@ -1,3 +1,4 @@
+import type { CompiledGameDefinition } from "../definition/index.js";
 import type { ErrorCode } from "../errors/codes.js";
 import type { EngineError, Result } from "../errors/result.js";
 import type {
@@ -172,4 +173,29 @@ export interface Publisher {
 
 export interface TimerPort {
   consume(outboxRow: OutboxRow): Promise<void>;
+}
+
+/** Machine-readable failure of `DefinitionRegistry.resolve` (spec DFR-050). */
+export type RegistryError = {
+  readonly code:
+    "UNKNOWN_DEFINITION" | "DEFINITION_HASH_MISMATCH" | "DEFINITION_INVALID";
+  readonly detail: string;
+};
+
+/** One loaded definition as listed by a registry adapter (spec DFR-050, DFR-051). */
+export type DefinitionSummary = {
+  readonly definitionId: DefinitionId;
+  readonly gameId: string;
+  readonly schemaVersion: number;
+};
+
+/**
+ * Resolves a content-addressed `DefinitionId` to its compiled definition (spec DFR-050).
+ * Interface only; the filesystem implementation lives in `packages/config`.
+ * Failure is a value: an unknown id is `UNKNOWN_DEFINITION`.
+ */
+export interface DefinitionRegistry {
+  resolve(
+    id: DefinitionId,
+  ): Promise<Result<CompiledGameDefinition, RegistryError>>;
 }

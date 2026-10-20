@@ -319,6 +319,18 @@ describe("FR-043 check 4 — skeleton purity (BR-006)", () => {
 
     expect(checkSkeletonPurity(root)).toEqual({ ok: true });
   });
+
+  it("passes when packages/config contains code (Phase 2 exemption, DFR-080)", () => {
+    const root = mkTempRepo();
+    seedMinimalValidRepo(root);
+    writeFile(
+      root,
+      "packages/config/src/index.ts",
+      "export function f(): number { return 1; }\n",
+    );
+
+    expect(checkSkeletonPurity(root)).toEqual({ ok: true });
+  });
 });
 
 describe("FR-043 check 5 — exact devDependency versions (BR-007/FR-029)", () => {
@@ -390,6 +402,80 @@ describe("FR-043 check 6 — workspace-only dependencies (BR-009)", () => {
     }
     expect(result.message).toContain("packages/app/package.json");
     expect(result.message).toContain("zod");
+  });
+
+  const withConfigDeps = (deps: Record<string, string>): string => {
+    const root = mkTempRepo();
+    seedMinimalValidRepo(root);
+    writeFile(
+      root,
+      "packages/config/package.json",
+      JSON.stringify(
+        {
+          name: "@cge/config",
+          version: "0.0.0",
+          private: true,
+          type: "module",
+          engines: { node: ">=22 <23" },
+          dependencies: { "@cge/core": "workspace:*", ...deps },
+          devDependencies: { vitest: "5.0.5" },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+    return root;
+  };
+
+  it("fails when a runtime dependency is added to packages/app (DFR-080)", () => {
+    const root = mkTempRepo();
+    seedMinimalValidRepo(root);
+    const pkgPath = path.join(root, "packages/app/package.json");
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    pkg.dependencies = { ...pkg.dependencies, yaml: "2.8.1" };
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+
+    const result = checkWorkspaceDependencies(root);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.message).toContain("packages/app/package.json");
+    expect(result.message).toContain("yaml");
+  });
+
+  it("fails when packages/config adds lodash (DFR-080)", () => {
+    const result = checkWorkspaceDependencies(
+      withConfigDeps({ lodash: "4.17.21" }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.message).toContain("packages/config/package.json");
+    expect(result.message).toContain("lodash");
+  });
+
+  it("fails when packages/config pins yaml with a caret range (DFR-080)", () => {
+    const result = checkWorkspaceDependencies(
+      withConfigDeps({ yaml: "^2.8.1" }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.message).toContain("packages/config/package.json");
+    expect(result.message).toContain("yaml");
+    expect(result.message).toContain("^2.8.1");
+  });
+
+  it("passes when packages/config pins yaml, zod and esbuild exactly (DFR-080)", () => {
+    const result = checkWorkspaceDependencies(
+      withConfigDeps({ yaml: "2.8.1", zod: "4.1.5", esbuild: "0.25.9" }),
+    );
+    expect(result).toEqual({ ok: true });
   });
 });
 

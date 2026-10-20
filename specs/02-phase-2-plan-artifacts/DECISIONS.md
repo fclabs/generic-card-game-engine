@@ -113,3 +113,17 @@ Append-only. Entry format: `## D-NNN: <title>  (Iteration N)` with Context, Deci
 **Decision.** The floor fixture is a JSON document (`fixtures/floor-definition.json`, raw parsed form, 40 counters including 2 derived) read by tests with `readFileSync`; expected hashes are `definition/identity-expected.json`. The child script is a string constant in `identity.test.ts` executed with `node --input-type=module -e` against `dist`. Timing follows `session/floor-performance.test.ts`: strict 250 ms bounds under `/.dockerenv` or `CGE_PERF_STRICT=1`, otherwise a 10x ceiling; the measured medians are printed with `console.info`.
 **Rejected.** A `.mjs` helper beside the tests (fails lint); a `.ts` fixture (a JSON file is also what iteration 7 can re-parse as text and is accepted by Prettier); adding lint exemptions.
 **Consequences.** Iteration 7 can write the YAML twin of the floor fixture and assert the same `floor` hash from `identity-expected.json`.
+
+## D-017: Registry port shape and test placement  (Iteration 6)
+
+**Context.** DFR-050 gives `RegistryError`/`DefinitionSummary` as plain object types and `resolve` as returning `Promise<Result<CompiledGameDefinition, RegistryError>>`; VC-240 wants a type test and an interface-only emitted module.
+**Decision.** Types live in `ports/types.ts` with `readonly` members (repo convention; `readonly` does not change assignability from the spec's literal shapes). The emitted-JS check reads `dist/ports/{index,types}.js` and asserts no `class`/`function` and `export {}`. The registry stub is `inMemoryRegistry` in `ports.testing.ts`.
+**Rejected.** Non-readonly members (inconsistent with `ports/types.ts`); a separate `registry.ts` module (one ports file is the P1 layout).
+**Consequences.** Iteration 9 implements `DefinitionRegistry` in `packages/config` against these exact types; the emitted-JS test needs a built `dist` (`pnpm test` builds first).
+
+## D-018: Check 6 allowance and fixtures  (Iteration 6)
+
+**Context.** DFR-080 permits `yaml`, `zod`, `esbuild` only in `packages/config/package.json`, exact versions; check 5 unchanged.
+**Decision.** Check 6 keeps its `@cge/*`+`workspace:` rule and adds a single exception branch keyed on the exact path `packages/config/package.json` and a constant name list, validated with the same `EXACT_VERSION` regex as check 5. Skeleton purity exempts config via a list of exempt package roots. New tests are table-free temp-repo cases; the VC-274 case is a new depcruise fixture dir rather than an edit of the Phase 0 one.
+**Rejected.** Pinning the dependency set to exactly three (allowance only; presence is VC-271, iteration 11/12); allowing the names in devDependencies handling (check 5 untouched).
+**Consequences.** Adding a fourth dependency or a range needs a guardrail change and is a spec change.
