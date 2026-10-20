@@ -64,3 +64,38 @@ Append-only. Entry format: `## D-NNN: <title>  (Iteration N)` with Context, Deci
 **Decision.** `compileVisibility(c, raw, path, {kind, entity, owned})` returns `{}` and ignores the block. Card `metadata_schema` is fully validated now through `readFieldMap` (`INVALID_VISIBILITY`), reusable by iteration 4.
 **Rejected.** Reading/validating visibility blocks early; deferring field visibility.
 **Consequences.** Until iteration 4 a bad zone/counter visibility block compiles silently.
+
+## D-010: Roles, visibility and control error conventions  (Iteration 4)
+
+**Context.** DFR-021/019/022 leave codes open for built-in role clashes, turn-order faults and view-key duplicates.
+**Decision.** A custom role named like a built-in, a repeated role, repeated phases/pointers/active seats/turn-order seats/view keys -> `DUPLICATE_ID` at the later occurrence (entity = the value). A turn order that omits a seat -> `INVALID_VALUE` at `control.turn_order` (entity = the seat); an undeclared seat in `turn_order`/`initial_active_seats` -> `UNKNOWN_REFERENCE` at its index. Empty `phases`, `initial_active_seats` or `view_keys` -> `INVALID_VALUE`. A phase/pointer/role id outside the id charset -> `INVALID_VALUE` (DFR-027). `initial_phase` with omitted `phases` must be `main`. Visibility: unknown role key, unknown audience string, `owner`/`team` on an unowned entity -> `INVALID_VISIBILITY` at `...visibility.<key>`, entity = zone/template/counter id (id template for `for_each` items); non-mapping or non-string audience -> `SCHEMA_TYPE`. `ForEachScope.roles` (optional) carries the known role names; `undefined` (roles failed) skips the role-key check.
+**Rejected.** `RESERVED_NAME` for built-in roles (spec reserves it for `engine.` schema ids); a new `roles` parameter on every builder.
+**Consequences.** Tests pin these; P3 reads `roles`/`visibility` as declared.
+
+## D-011: Meta schema, hook and bundle rules  (Iteration 4)
+
+**Context.** DFR-020/023/024 do not say whether `fields` is required, what an export name is, or where bundle errors go.
+**Decision.** `meta_schemas[].fields` is optional (default `{}`); `id` is required; `reducer` absent -> `MISSING_REDUCER` at `...reducer` (entity = schema id). Export names (reducers, roster reducer, every hook name) must match `^[A-Za-z_$][A-Za-z0-9_$]*$` (`INVALID_VALUE`). A hook binding value is a name or a non-empty list. `hooks.module` allows `[A-Za-z0-9_.@-]` segments only. Reaction key validity: regex of DFR-023, then `phase:<p>` against declared phases (`UNKNOWN_REFERENCE`, skipped when control failed). Bundle checks run after all sections, on the raw document's references (`extractReferences`, document order, raw paths): `MISSING_HOOK_MODULE` once at the first reference when `hooks.module` is absent (applies to any reference, not only reducers: a hook cannot resolve without a module); `BUNDLE_MISSING` once (at `hooks.module`, else at the first reference) when no bundle is supplied; with a bundle, one `UNKNOWN_HOOK_EXPORT` per missing reference naming the export. Both of the first two are reported when both apply.
+**Rejected.** Per-reference `MISSING_HOOK_MODULE`; running bundle checks inside each section (would need `ctx` everywhere).
+**Consequences.** `definitionNeedsBundle` = `hooks.module` key present or any string reference; iteration 8/9 use it and `collectHookReferences` unchanged.
+
+## D-012: Policy defaults vs ceilings  (Iteration 4)
+
+**Context.** DFR-025 defaults `cascade_cap` to 16 and requires it not to exceed `limits.cascadeCapMax`.
+**Decision.** An absent `cascade_cap` compiles to 16 without a ceiling check (the ceiling constrains declared values; a ceiling below 16 therefore does not make every game without `cascade_cap` fail). Declared values: outside `[1, 256]` -> `INVALID_VALUE`, above the ceiling -> `LIMIT_EXCEEDED`. Cost budgets: unknown key -> `SCHEMA_UNKNOWN_KEY`, below 1 -> `INVALID_VALUE`, above `costBudgetMax` -> `LIMIT_EXCEEDED`. `ctx.limits` replaces the default wholesale.
+**Rejected.** Clamping the default to the ceiling (makes identity depend on limits silently).
+**Consequences.** The registry (iteration 9) passes config limits unchanged.
+
+## D-013: Final verification step  (Iteration 4)
+
+**Context.** DFR-010/026: `ok` must imply identity validity and structural validity, and the compiler must not throw.
+**Decision.** `finalize.ts#verifyCompiled` runs only when no error was reported: `canonicalize(definitionIdentitySchema, definitionData(value))`; a `CanonicalError` becomes `INVALID_VALUE` at its path inside the compiled value (the `$.` prefix removed, e.g. `cards[3].initialMetadata.x`, not the raw YAML path); then `assertDefinitionStructure` (violation -> `INVALID_VALUE` at `""`). Both are safety nets: the per-section checks already report path-bearing errors earlier.
+**Rejected.** Mapping canonical paths back to raw YAML paths (generators make it lossy); running the checks when other errors exist (spurious).
+**Consequences.** Every compile pays one canonicalisation; iteration 5 measures it.
+
+## D-014: Tests, fixture and obsolete stub tests  (Iteration 4)
+
+**Context.** VC-210 needs a literal fixture; iteration 3 tests asserted the visibility stub.
+**Decision.** The VC-210 fixture is the TS object `FULL_DEFINITION` in `compile/full-definition.testing.ts` (with `FULL_BUNDLE`). The two iteration-3 tests "compiles it to {} (known gap)" in `zones.test.ts` and `counters.test.ts` now assert the compiled rules. VC-228's "`definitionContentHash` does not throw" property uses `canonicalize(definitionIdentitySchema, definitionData(v))` because the hasher arrives in iteration 5; iteration 5 should re-point it to the hasher.
+**Rejected.** Committing a `.yaml` fixture now (no YAML parser until iteration 7).
+**Consequences.** Iteration 5 updates the VC-228 property.

@@ -62,7 +62,7 @@ export function compileZones(
   items.forEach((item, i) => {
     const p = indexPath(path, i);
     if (isPlainObject(item) && has(item, "template")) {
-      const t = compileTemplate(c, item, p, names);
+      const t = compileTemplate(c, item, p, names, scope);
       if (t !== undefined) zoneTemplates.push(t);
     } else {
       zones.push(...compileFixedZone(c, item, p, scope, names));
@@ -113,6 +113,7 @@ function compileFixedZone(
           kind: "zone",
           entity: idTemplate ?? "",
           owned: has(obj, "owner_id"),
+          roles: scope.roles,
         },
       )
     : {};
@@ -193,6 +194,7 @@ function compileTemplate(
   obj: Readonly<Record<string, unknown>>,
   p: string,
   names: Namespaces,
+  scope: ForEachScope,
 ): ZoneTemplateDecl | undefined {
   const entry = readObject(
     c,
@@ -252,6 +254,7 @@ function compileTemplate(
           kind: "template",
           entity: name ?? "",
           owned: owner !== undefined && owner !== "none",
+          roles: scope.roles,
         },
       )
     : {};

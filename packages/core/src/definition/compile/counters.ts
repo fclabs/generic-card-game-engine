@@ -213,6 +213,7 @@ function compileCounter(
           kind: "counter",
           entity,
           owned: owner !== undefined && owner !== "table",
+          roles: scope.roles,
         },
       )
     : {};

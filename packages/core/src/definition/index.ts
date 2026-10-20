@@ -53,3 +53,7 @@ export {
 } from "./compile/constants.js";
 export { DEFAULT_DEFINITION_LIMITS } from "./compile/limits.js";
 export type { DefinitionLimits } from "./compile/limits.js";
+export {
+  collectHookReferences,
+  definitionNeedsBundle,
+} from "./compile/references.js";

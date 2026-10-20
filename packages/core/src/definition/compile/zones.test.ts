@@ -298,11 +298,11 @@ describe("VC-214 zones (DFR-013, DFR-018)", () => {
     );
   });
 
-  it("accepts a visibility block and compiles it to {} (known gap until iteration 4)", () => {
+  it("compiles a visibility block (DFR-021)", () => {
     const def = success(
       zonesOf([{ ...STOCK, visibility: { default: "hidden" } }]),
     );
-    expect(def.zones[0]?.visibility).toEqual({});
+    expect(def.zones[0]?.visibility).toEqual({ default: "hidden" });
   });
 });
 

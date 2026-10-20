@@ -282,11 +282,11 @@ describe("VC-216 counters: owner rules and for_each", () => {
     ]);
   });
 
-  it("accepts a visibility block and compiles it to {} (known gap until iteration 4)", () => {
+  it("compiles a visibility block (DFR-021)", () => {
     const def = success(
       counters([{ ...POT, visibility: { default: "public" } }]),
     );
-    expect(def.counters[0]?.visibility).toEqual({});
+    expect(def.counters[0]?.visibility).toEqual({ default: "public" });
   });
 });
 

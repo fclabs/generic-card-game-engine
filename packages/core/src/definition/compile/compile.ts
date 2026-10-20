@@ -1,4 +1,10 @@
-import type { CompiledGameDefinition } from "../types.js";
+import type {
+  CompiledGameDefinition,
+  ControlDecl,
+  MetaSchemaDecl,
+  PolicyDecl,
+  RoleDecl,
+} from "../types.js";
 import {
   GRANTABLE_VIEW_KEYS,
   SUPPORTED_ACTION_SCHEMA_VERSIONS,
@@ -6,6 +12,17 @@ import {
 import type { DefinitionError } from "./errors.js";
 import { createErrorCollector } from "./errors.js";
 import { isValidGameId } from "./ids.js";
+import { DEFAULT_DEFINITION_LIMITS } from "./limits.js";
+import { compileControl } from "./control.js";
+import { verifyCompiled } from "./finalize.js";
+import { compileHooks } from "./hooks.js";
+import type { CompiledHooks } from "./hooks.js";
+import { compileMetaSchemas, readExportName } from "./meta.js";
+import { compilePolicies, DEFAULT_CASCADE_CAP } from "./policies.js";
+import { BUILT_IN_ROLES, compileRoles } from "./roles.js";
+import { checkBundle } from "./references.js";
+import type { HookBundleInfo } from "./references.js";
+import { compileViewKeys } from "./view-keys.js";
 import type { DefinitionLimits } from "./limits.js";
 import { compileCards } from "./cards.js";
 import type { CompiledCards } from "./cards.js";
@@ -19,11 +36,7 @@ import { compileZones } from "./zones.js";
 import type { CompiledZones } from "./zones.js";
 import { has, member, readInteger, readObject, readString } from "./strict.js";
 
-/** Bundle facts the compiler needs (spec §7.3); used from iteration 4. */
-export interface HookBundleInfo {
-  readonly hash: string;
-  readonly exports: readonly string[];
-}
+export type { HookBundleInfo } from "./references.js";
 
 export interface CompileContext {
   readonly bundle?: HookBundleInfo;
@@ -59,18 +72,10 @@ export const SECTION_ORDER = [
 export type SectionKey = (typeof SECTION_ORDER)[number];
 
 /**
- * Sections still accepted as absent and compiled to their defaults (their
- * content is not yet read). Iterations 3 and 4 remove entries as they land.
+ * Sections accepted as absent but not yet compiled. Empty since iteration 4:
+ * every section of spec section 7.1 is compiled.
  */
-export const UNIMPLEMENTED_SECTIONS: readonly SectionKey[] = [
-  "roles",
-  "control",
-  "meta_schemas",
-  "roster_reducer",
-  "view_keys",
-  "hooks",
-  "policies",
-];
+export const UNIMPLEMENTED_SECTIONS: readonly SectionKey[] = [];
 
 const REQUIRED_SECTIONS: readonly SectionKey[] = [
   "id",
@@ -90,16 +95,16 @@ const EMPTY_GROUPS: CompiledGroups = { conservationGroups: [] };
  */
 export function compileDefinition(
   raw: unknown,
-  // Read by sections added in iterations 3-4 (limits, bundle).
   ctx: CompileContext = {},
 ): CompileResult {
-  void ctx;
+  const limits = ctx.limits ?? DEFAULT_DEFINITION_LIMITS;
   const c = createErrorCollector();
   try {
     const root = readObject(c, raw, "", SECTION_ORDER, REQUIRED_SECTIONS);
     let gameId: string | undefined;
     let schemaVersion: number | undefined;
     let seats: ReturnType<typeof compileSeats>;
+    let roles: readonly RoleDecl[] | undefined = [];
     if (root !== undefined) {
       if (has(root, "id")) {
         const id = readString(c, member(root, "id"), "id");
@@ -132,6 +137,9 @@ export function compileDefinition(
           }
         }
       }
+      if (has(root, "roles")) {
+        roles = compileRoles(c, member(root, "roles"), "roles");
+      }
       if (has(root, "seats")) {
         seats = compileSeats(c, member(root, "seats"), "seats");
       }
@@ -141,7 +149,15 @@ export function compileDefinition(
     const scope: ForEachScope | undefined =
       seats === undefined
         ? undefined
-        : { seats: seats.seats.map((s) => s.id), teams: seats.teams };
+        : {
+            seats: seats.seats.map((s) => s.id),
+            teams: seats.teams,
+            ...(roles === undefined
+              ? {}
+              : {
+                  roles: [...BUILT_IN_ROLES, ...roles.map((r) => r.id)],
+                }),
+          };
     let zones: CompiledZones | undefined = EMPTY_ZONES;
     let cards: CompiledCards | undefined = EMPTY_CARDS;
     let counters: CompiledCounters | undefined = EMPTY_COUNTERS;
@@ -185,9 +201,69 @@ export function compileDefinition(
               );
       }
     }
+    let control: ControlDecl | undefined;
+    let metaSchemas: readonly MetaSchemaDecl[] | undefined = [];
+    let rosterReducerRef: string | undefined;
+    let viewKeys: readonly string[] | undefined = [...GRANTABLE_VIEW_KEYS];
+    let hooks: CompiledHooks | undefined = { hookBindings: {} };
+    let policies: PolicyDecl | undefined = {
+      cascadeCap: DEFAULT_CASCADE_CAP,
+      costBudgets: {},
+    };
+    if (root !== undefined) {
+      control = compileControl(
+        c,
+        has(root, "control") ? member(root, "control") : {},
+        "control",
+        scope?.seats,
+      );
+      if (has(root, "meta_schemas")) {
+        metaSchemas = compileMetaSchemas(
+          c,
+          member(root, "meta_schemas"),
+          "meta_schemas",
+        );
+      }
+      if (has(root, "roster_reducer")) {
+        const before = c.count;
+        const ref = readExportName(
+          c,
+          member(root, "roster_reducer"),
+          "roster_reducer",
+        );
+        if (ref === undefined || c.count !== before) metaSchemas = undefined;
+        else rosterReducerRef = ref;
+      }
+      if (has(root, "view_keys")) {
+        viewKeys = compileViewKeys(c, member(root, "view_keys"), "view_keys");
+      }
+      if (has(root, "hooks")) {
+        hooks = compileHooks(
+          c,
+          member(root, "hooks"),
+          "hooks",
+          control?.phases,
+        );
+      }
+      if (has(root, "policies")) {
+        policies = compilePolicies(
+          c,
+          member(root, "policies"),
+          "policies",
+          limits,
+        );
+      }
+      checkBundle(c, root, ctx.bundle);
+    }
     if (
       c.count > 0 ||
       gameId === undefined ||
+      roles === undefined ||
+      control === undefined ||
+      metaSchemas === undefined ||
+      viewKeys === undefined ||
+      hooks === undefined ||
+      policies === undefined ||
       schemaVersion === undefined ||
       seats === undefined ||
       zones === undefined ||
@@ -197,11 +273,9 @@ export function compileDefinition(
     ) {
       return { ok: false, errors: c.errors(), truncated: c.truncated };
     }
-    const seatIds = seats.seats.map((s) => s.id);
-    const first = seatIds[0];
     const value: CompiledGameDefinition = {
       gameId,
-      roles: [],
+      roles,
       schemaVersion,
       cards: cards.cards,
       zones: zones.zones,
@@ -210,20 +284,16 @@ export function compileDefinition(
       conservationGroups: groups.conservationGroups,
       seats: seats.seats,
       teams: seats.teams,
-      viewKeys: [...GRANTABLE_VIEW_KEYS],
-      control: {
-        phases: ["main"],
-        initialPhase: "main",
-        turnOrder: seatIds,
-        initialActiveSeats: first === undefined ? [] : [first],
-        pointerNames: [],
-        enforceActiveSeats: false,
-        outOfTurnKinds: [],
-      },
-      metaSchemas: [],
-      policies: { cascadeCap: 16, costBudgets: {} },
-      hookBindings: {},
+      viewKeys,
+      control,
+      metaSchemas,
+      ...(rosterReducerRef === undefined ? {} : { rosterReducerRef }),
+      policies,
+      hookBindings: hooks.hookBindings,
     };
+    if (!verifyCompiled(c, value)) {
+      return { ok: false, errors: c.errors(), truncated: c.truncated };
+    }
     return { ok: true, value };
   } catch (error) {
     // Total by contract: an internal fault is reported, never thrown.

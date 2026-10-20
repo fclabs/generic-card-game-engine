@@ -13,6 +13,11 @@ export const FOR_EACH_KINDS: readonly ForEachKind[] = ["seat", "team"];
 export interface ForEachScope {
   readonly seats: readonly string[];
   readonly teams: readonly string[];
+  /**
+   * Known role names (built-ins plus declared roles), for `visibility` keys;
+   * `undefined` (the roles section failed) skips that check.
+   */
+  readonly roles?: readonly string[];
 }
 
 /** One instance: the seat and/or team bound to the placeholders. */
