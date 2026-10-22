@@ -697,6 +697,16 @@ export interface GenerateOptions {
   readonly illegalPercent?: number;
   /** Maximum actions per batch (default 5). */
   readonly maxLength?: number;
+  /**
+   * Post-processes each generated action before it is previewed and kept (Phase 3 uses it to
+   * inject canary payloads and to retarget grant keys). It must not consume more tape than a
+   * constant amount per call so streams stay reproducible per tape.
+   */
+  readonly rewrite?: (
+    action: Action | Macro,
+    t: Tape,
+    bad: boolean,
+  ) => Action | Macro;
 }
 
 export interface GeneratedBatch {
@@ -722,7 +732,11 @@ export function generateBatch(
   let preview = state;
   for (let i = 0; i < length; i++) {
     const bad = t.chance(illegal);
-    const action = generateAction(def, preview, t, bad);
+    const generated = generateAction(def, preview, t, bad);
+    const action =
+      options.rewrite === undefined
+        ? generated
+        : options.rewrite(generated, t, bad);
     batch.push(action);
     if (action.kind === "lifecycle") break;
     const r = apply(def, preview, [action]);

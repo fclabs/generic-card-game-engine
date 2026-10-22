@@ -105,6 +105,24 @@ describe("VC-312 grant parts", () => {
       undefined,
     );
   });
+  it("a zone card_face grant alone lists no member (found by VC-340/341, Iteration 7)", () => {
+    const s = sit(def, [
+      A.grant({ kind: "zone", zone_id: "stock" }, ["card_face"], "east"),
+    ]);
+    const east = viewOf(def, s, "player", "east");
+    expect(east.zones[zid("stock")]).toBe(undefined);
+    expect(JSON.stringify(east)).not.toContain('"k1"');
+    // With membership too, the faces arrive.
+    const both = sit(def, [
+      A.grant(
+        { kind: "zone", zone_id: "stock" },
+        ["card_face", "zone_membership"],
+        "east",
+      ),
+    ]);
+    const z = viewOf(def, both, "player", "east").zones[zid("stock")]!;
+    expect(z.members!.every((m) => m.face !== undefined)).toBe(true);
+  });
   it("a zone_count grant alone gives count only", () => {
     const s = sit(def, [
       A.grant({ kind: "zone", zone_id: "stock" }, ["zone_count"], "east"),

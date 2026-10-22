@@ -130,3 +130,21 @@
 **Decision:** Each `once` grant is tested alone (the others stay in the union). Identical redundant grants are therefore both omitted; one non-redundant grant is returned. Grantee seats are expanded over `pre`; seats missing from `post.roster` are skipped. Equality is whole-`Delta` JSON equality; baselines per seat are cached across grants.
 **Rejected:** Removing all `once` grants together (would flag grants that add nothing individually); expanding over `post` (a grant being revoked in the batch still needs its seats).
 **Consequences:** Callers (P6) consume only flagged grants; a redundant duplicate stays until it matters on its own.
+
+## D-023: Reading of the spec used by the property oracle and fold  (Iteration 7)
+**Context:** VC-340..343 need an exact reading where the spec is silent or its pieces interact.
+**Decision:** (a) The oracle follows D-007..D-014 where the spec is silent, including "a zone appears iff count-entitled or some member is listed" (a membership-only grant on an empty zone shows nothing). (b) A viewer with a subject seat sees that seat's own sealed gate submission for any role (render with a subject, custom roles included); only registered `auditor` sees all (PFR-018 "a seat that has submitted sees its own"). (c) A delta is judged over the batch's states (pre, each action prefix, post) under the union of pre/post grants: a `move` is a public event for whoever is entitled to either zone at that moment, so a card that transits a viewer-visible zone is named even if it ends hidden; `face` follows PFR-024 literally (`card_face` for the card in `post`, so a zone-level `card_face` grant can attach a face to a card whose id came from the source zone). (d) `move` entries carry no orientation (spec shape), so the fold treats a newly visible card's orientation as unknown and skips it. (e) With grants, VC-342 restarts every step from `projectView(pre)` and requires only the static facts; without grants it folds the whole stream and compares everything (D-019 limits). (f) Perturbation (VC-343) swaps identities of cards that are unlisted in every judged state and never perturbs listed data.
+**Rejected:** Requiring full equality under grants (content of new, ended, re-resolved `top` or consumed grants is not in a delta); judging deltas only on pre/post (rejects legal public events).
+**Consequences:** The limits are listed in CONTEXT "Known gaps"; adding orientation to `move` entries or grant-content to deltas would tighten VC-342 (spec change).
+
+## D-024: A zone `card_face` grant does not list members  (Iteration 7)
+**Context:** VC-340/341 failed: `projectView` listed every card of a zone (with face and `orderKnown: false`) when the viewer held only a zone-level `card_face` grant. The listing filter used `isEntitledToCardKey(card_face)`, which includes zone grants. PFR-012/019: a grant adds only the keys it names; faces need a listed card.
+**Decision:** `projectZones` lists a card without whole-zone membership only if a card-level grant (card or resolved `top` target) names `zone_membership` or `card_face` for it (`ctx.cardKeys`); the face of a listed card still uses the full `card_face` entitlement (zone grant included). `projectDelta` already used card-level keys only.
+**Rejected:** Treating a zone `card_face` grant as implying membership (widens entitlement beyond the grant).
+**Consequences:** Regression test in `project-view-grants.test.ts`; behaviour for membership grants and static zones unchanged.
+
+## D-025: Property knobs and case counts  (Iteration 7)
+**Context:** PNFR-001 wants at least 2 000 cases per role class in `pnpm test` with a fixed seed list.
+**Decision:** `CGE_VISIBILITY_RUNS` (default 2000) cases per role class and property, split over `SEEDS` (4 fixed seeds); VC-344 and VC-376 default to min(runs, 500); `CGE_VISIBILITY_SEED` runs one seed. A case is one generated (definition, session, batches) tuple checked for every viewer of the class at every state/step. VC-342 runs twice (grant-free whole stream, and with grants per step). Failures are rethrown with property, class, seed and the shrunk tape.
+**Rejected:** One shared constant like P1's `RUNS` (the suite would be unusable at the floor on a laptop with no way to shorten it).
+**Consequences:** The default suite adds about 95 s in one file; `CGE_VISIBILITY_RUNS=100` is the quick run.

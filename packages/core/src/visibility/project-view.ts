@@ -140,14 +140,14 @@ function projectZones(
     const orderKnown = full && isEntitledToZoneKey(ctx, zoneId, "zone_order");
     const ordered = isZoneOrdered(compiled, id, zone.template);
     // Whole-zone membership lists every member; otherwise only the cards a
-    // card-level grant entitles (PFR-012, PFR-019).
+    // card-level grant entitles (PFR-012, PFR-019). A zone-level `card_face`
+    // grant alone adds the faces of listed cards, never the listing itself.
     const listed = full
       ? zone.members
-      : zone.members.filter(
-          (cardId) =>
-            isEntitledToCardKey(ctx, cardId, "zone_membership") ||
-            isEntitledToCardKey(ctx, cardId, "card_face"),
-        );
+      : zone.members.filter((cardId) => {
+          const keys = ctx.cardKeys.get(cardId);
+          return keys?.has("zone_membership") || keys?.has("card_face");
+        });
     if (!count && listed.length === 0) continue;
     const members: CardView[] | undefined =
       listed.length === 0 && !full
