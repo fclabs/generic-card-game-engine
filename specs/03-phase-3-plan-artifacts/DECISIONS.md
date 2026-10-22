@@ -94,3 +94,27 @@
 **Decision:** `makeView` takes `ViewSections = Omit<View, typeof viewBrand>`; `Delta` is declared with `DeltaSections` the same way (Iteration 5 adds its single constructor). The rule's `to.path` matches `packages/core/(src|dist)/visibility/open-batch(.d).(ts|js)` and `^@cge/core/.*open-batch`; `from.pathNot` is `packages/core/src/(visibility|replay)/` (tests beside those sources are allowed). `SECTION_73_RULES` (the guardrail rule list) gained the rule; its listing test title now says 13 rules.
 **Rejected:** Exporting the brand symbols (would let callers forge brands).
 **Consequences:** Anything outside visibility/replay that needs a batch's content cannot import `open-batch`.
+
+## D-017: Card-level grants count as membership for delta entries  (Iteration 5)
+**Context:** PFR-024 keys `card_id`/`from_zone`/`to_zone` on zone-level membership entitlement, but `projectView` (D-012) lists a card that holds a card-level grant inside its zone.
+**Decision:** For a card `c` and zone `Z`, "membership-entitled" in a delta = zone `zone_membership` entitlement (static or zone grant) OR a card-level grant of `zone_membership`/`card_face` on `c` in that side's context. Source side uses the `pre` context, destination side `post`; a zone existing in one state only is evaluated in that state.
+**Rejected:** Zone-level only (a granted card moving between two hidden zones would silently vanish from the grantee's view without any delta entry).
+**Consequences:** Hands-off for Iteration 6: the same predicate is used under a grant exclusion.
+
+## D-018: Entry details  (Iteration 5)
+**Context:** The spec leaves entry ordering, `set_metadata` visibility and positions open.
+**Decision:** `i` is the index in the committed action list (gaps where actions are invisible or not card events); entries are emitted in action order. `from_position` is the card's index in the working membership of an ordered, order-entitled source (working memberships are simulated over the batch); `to_position` is the action's `to_position` for an ordered, order-entitled destination; unordered zones never get positions. `set_metadata` produces an entry only if the viewer is membership- and face-entitled and at least one written field is visible; `fields` holds visible written fields with their post values (an empty entry would only leak that a hidden change happened). `counter_adjust`/`counter_transfer` produce no entries; the amount is never exposed.
+**Rejected:** Emitting empty `set_metadata` entries; positions for unordered zones.
+**Consequences:** `counter_transfer` between a visible and a hidden counter yields only the visible counter's new value in `counters`.
+
+## D-019: Non-card sections are diffs of viewer projections  (Iteration 5)
+**Context:** PFR-026 says "changed" for meta, gates, roster and counters; raw state can change without anything visible to the viewer.
+**Decision:** `meta`, `gates` and `roster` compare the viewer's projection of `pre` and `post` and emit the post projection (`null` for a gone entry) only if it differs; `counters` emit when the raw value changed and the viewer is entitled in `post`; `zoneCounts` when the count changed or the zone is new and count-entitled in `post`; `control`/`lifecycle`/`outcome` when changed. A gate's public `submitted` list is part of the projection, so `engine.gate_submit` gives non-entitled viewers a `gates` entry with `submitted` but never a payload (VC-330's "empty delta" read as no entries and no payload; the alternative would contradict PFR-018 and PBR-010). A grant-only batch is empty for non-grantees. Newly granted content is not pushed into the delta (no section can carry it).
+**Rejected:** Emitting on raw-state change alone (leaks that a secret field changed).
+**Consequences:** Iteration 7's consistency check must tolerate facts that appear only through a newly added grant (they arrive via the `grants` entry and the next view).
+
+## D-020: Opener rule also exempts built output  (Iteration 5)
+**Context:** `pnpm depcheck` cruises `packages/core/dist`; the compiled `dist/visibility/project-delta.js` imports `open-batch.js` and tripped the rule, whose `from.pathNot` covered `src/` only (Iteration 4 had no importer).
+**Decision:** `from.pathNot` is now `packages/core/(src|dist)/(visibility|replay)/`. No other rule or fixture changed; the violating fixture (`core-privileged-batch-opener-app`) still fails.
+**Rejected:** Excluding `dist` from the cruise (hides real violations).
+**Consequences:** Replay code in Iteration 9 compiles into `dist/replay`, which is exempt as well.

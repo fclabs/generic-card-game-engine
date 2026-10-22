@@ -15,7 +15,7 @@ import type {
 } from "../session/ids.js";
 import { getOwn, hasOwn, setOwn } from "../session/records.js";
 import type { Snapshot } from "../session/snapshot.js";
-import type { JsonValue, SessionState } from "../session/state.js";
+import type { Grant, JsonValue, SessionState } from "../session/state.js";
 import {
   buildEntitlementContext,
   isEntitledToCardKey,
@@ -43,7 +43,7 @@ import type {
 } from "./types.js";
 
 /** Per-definition lookups, built once and reused across calls. */
-interface Compiled {
+export interface Compiled {
   readonly registry: RoleRegistry;
   readonly policy: VisibilityPolicy;
   readonly cardTypes: ReadonlyMap<string, string | undefined>;
@@ -57,7 +57,8 @@ interface Compiled {
 
 const cache = new WeakMap<CompiledGameDefinition, Compiled>();
 
-function compile(def: CompiledGameDefinition): Compiled {
+/** The per-definition lookups (cached per definition object). */
+export function compileLookups(def: CompiledGameDefinition): Compiled {
   const hit = cache.get(def);
   if (hit !== undefined) return hit;
   const compiled: Compiled = {
@@ -91,7 +92,7 @@ export function cloneJson(value: JsonValue): JsonValue {
   return value;
 }
 
-function projectFace(
+export function projectFace(
   compiled: Compiled,
   card: CardId,
   metadata: Readonly<Record<string, JsonValue>>,
@@ -110,6 +111,21 @@ function projectFace(
   return type === undefined ? { metadata: fields } : { type, metadata: fields };
 }
 
+/** Whether zone `id` (of template `template`, if any) is ordered. */
+export function isZoneOrdered(
+  compiled: Compiled,
+  id: string,
+  template: string | undefined,
+): boolean {
+  return (
+    compiled.zoneOrdered.get(id) ??
+    (template === undefined
+      ? undefined
+      : compiled.templateOrdered.get(template)) ??
+    false
+  );
+}
+
 function projectZones(
   compiled: Compiled,
   ctx: EntitlementContext,
@@ -122,12 +138,7 @@ function projectZones(
     const count = isEntitledToZoneKey(ctx, zoneId, "zone_count");
     const full = isEntitledToZoneKey(ctx, zoneId, "zone_membership");
     const orderKnown = full && isEntitledToZoneKey(ctx, zoneId, "zone_order");
-    const ordered =
-      compiled.zoneOrdered.get(id) ??
-      (zone.template === undefined
-        ? undefined
-        : compiled.templateOrdered.get(zone.template)) ??
-      false;
+    const ordered = isZoneOrdered(compiled, id, zone.template);
     // Whole-zone membership lists every member; otherwise only the cards a
     // card-level grant entitles (PFR-012, PFR-019).
     const listed = full
@@ -167,7 +178,7 @@ function projectZones(
 }
 
 /** PFR-017. */
-function projectMeta(
+export function projectMeta(
   compiled: Compiled,
   state: Snapshot<SessionState>,
   viewer: ViewerIdentity,
@@ -235,7 +246,7 @@ function subjectEntries(
 }
 
 /** PFR-018. */
-function projectGates(
+export function projectGates(
   state: Snapshot<SessionState>,
   viewer: ViewerIdentity,
 ): View["gates"] {
@@ -277,57 +288,109 @@ function projectGates(
   return { open, resolved };
 }
 
-/** PFR-020: a grant is listed for its grantees and the statically entitled. */
+/** PFR-020: is `grant` listed for the viewer of `ctx` (grantee or statically entitled)? */
+export function isGrantVisible(ctx: EntitlementContext, grant: Grant): boolean {
+  return (
+    isGrantee(ctx.state, grant, ctx.viewer) ||
+    isStaticallyEntitledToGrant(ctx, grant)
+  );
+}
+
+/** The `GrantView` of a stored grant (JSON clones). */
+export function projectGrantView(grant: Grant): GrantView {
+  return {
+    target: cloneJson(grant.target),
+    keys: [...grant.keys],
+    grantee: grant.grantee,
+    scope: cloneJson(grant.scope),
+  };
+}
+
 function projectGrants(ctx: EntitlementContext): Record<GrantId, GrantView> {
-  const { state, viewer } = ctx;
+  const { state } = ctx;
   const out: Record<GrantId, GrantView> = {};
   for (const id of Object.keys(state.grants).sort(compareIds)) {
     const grant = state.grants[id as GrantId]!;
-    if (
-      isGrantee(state, grant, viewer) ||
-      isStaticallyEntitledToGrant(ctx, grant)
-    ) {
-      setOwn<GrantView>(out, id, {
-        target: cloneJson(grant.target),
-        keys: [...grant.keys],
-        grantee: grant.grantee,
-        scope: cloneJson(grant.scope),
-      });
+    if (isGrantVisible(ctx, grant)) {
+      setOwn<GrantView>(out, id, projectGrantView(grant));
     }
   }
   return out;
 }
 
-/** PFR-015, PBR-011. */
+/** The current value of a stored or derived counter in `state`, if it has one. */
+export function counterValue(
+  counter: CounterDecl,
+  state: Snapshot<SessionState>,
+): bigint | undefined {
+  return counter.derived !== undefined
+    ? counter.derived(state)
+    : getOwn(state.counters, counter.id);
+}
+
+/** PFR-015, PBR-011: is the viewer of `ctx` entitled to `counter`? */
+export function isCounterVisible(
+  compiled: Compiled,
+  ctx: EntitlementContext,
+  counter: CounterDecl,
+): boolean {
+  const { state, viewer } = ctx;
+  const declared = Object.keys(counter.visibility).length > 0;
+  if (declared || counter.derived === undefined) {
+    return isEntitled(
+      compiled.policy.counterAudience(counter.id, viewer.role),
+      counter.ownerId,
+      viewer,
+      state,
+    );
+  }
+  // Derived without a declaration: inherit the input zone's zone_count.
+  return (
+    counter.derivedSpec !== undefined &&
+    isEntitledToZoneKey(ctx, counter.derivedSpec.zone, "zone_count")
+  );
+}
+
 function projectCounters(
   compiled: Compiled,
   ctx: EntitlementContext,
 ): Record<CounterId, string> {
-  const { state, viewer } = ctx;
   const out: Record<CounterId, string> = {};
   for (const counter of compiled.counters) {
-    let value: bigint | undefined;
-    if (counter.derived !== undefined) value = counter.derived(state);
-    else value = getOwn(state.counters, counter.id);
-    if (value === undefined) continue;
-    const declared = Object.keys(counter.visibility).length > 0;
-    let entitled: boolean;
-    if (declared || counter.derived === undefined) {
-      entitled = isEntitled(
-        compiled.policy.counterAudience(counter.id, viewer.role),
-        counter.ownerId,
-        viewer,
-        state,
-      );
-    } else {
-      // Derived without a declaration: inherit the input zone's zone_count.
-      entitled =
-        counter.derivedSpec !== undefined &&
-        isEntitledToZoneKey(ctx, counter.derivedSpec.zone, "zone_count");
+    const value = counterValue(counter, ctx.state);
+    if (value !== undefined && isCounterVisible(compiled, ctx, counter)) {
+      setOwn(out, counter.id, value.toString());
     }
-    if (entitled) setOwn(out, counter.id, value.toString());
   }
   return out;
+}
+
+export type SeatView = View["roster"][SeatId];
+
+/** PFR-016: a roster seat as every viewer sees it. */
+export function projectSeat(
+  seat: SessionState["roster"]["seats"][SeatId],
+): SeatView {
+  return {
+    status: seat.status,
+    ...(seat.team !== undefined ? { team: seat.team } : {}),
+    ...(seat.player !== undefined ? { player: seat.player } : {}),
+  };
+}
+
+/** PFR-016: the control section as every viewer sees it. */
+export function projectControl(state: Snapshot<SessionState>): View["control"] {
+  const pointers: Record<string, SeatId> = {};
+  for (const name of Object.keys(state.control.pointers).sort(compareIds)) {
+    setOwn(pointers, name, state.control.pointers[name]!);
+  }
+  return {
+    phase: state.control.phase,
+    turnOrder: [...state.control.turnOrder],
+    activeSeats: [...state.control.activeSeats],
+    direction: state.control.direction,
+    pointers,
+  };
 }
 
 /**
@@ -340,7 +403,7 @@ export function projectView(
   state: Snapshot<SessionState>,
   viewer: ViewerIdentity,
 ): Result<View> {
-  const compiled = compile(def);
+  const compiled = compileLookups(def);
   const valid = validateViewer(compiled.registry, state, viewer);
   if (!valid.ok) return valid;
 
@@ -350,26 +413,9 @@ export function projectView(
       : { role: viewer.role, subject: viewer.subject };
   const ctx = buildEntitlementContext(compiled.policy, state, identity);
 
-  const roster: Record<
-    SeatId,
-    {
-      status: View["roster"][SeatId]["status"];
-      team?: NonNullable<View["roster"][SeatId]["team"]>;
-      player?: NonNullable<View["roster"][SeatId]["player"]>;
-    }
-  > = {};
+  const roster: Record<SeatId, SeatView> = {};
   for (const seat of Object.keys(state.roster.seats).sort(compareIds)) {
-    const s = state.roster.seats[seat as SeatId]!;
-    setOwn(roster, seat, {
-      status: s.status,
-      ...(s.team !== undefined ? { team: s.team } : {}),
-      ...(s.player !== undefined ? { player: s.player } : {}),
-    });
-  }
-
-  const pointers: Record<string, SeatId> = {};
-  for (const name of Object.keys(state.control.pointers).sort(compareIds)) {
-    setOwn(pointers, name, state.control.pointers[name]!);
+    setOwn(roster, seat, projectSeat(state.roster.seats[seat as SeatId]!));
   }
 
   return ok(
@@ -379,13 +425,7 @@ export function projectView(
       viewer: identity,
       zones: projectZones(compiled, ctx),
       counters: projectCounters(compiled, ctx),
-      control: {
-        phase: state.control.phase,
-        turnOrder: [...state.control.turnOrder],
-        activeSeats: [...state.control.activeSeats],
-        direction: state.control.direction,
-        pointers,
-      },
+      control: projectControl(state),
       roster,
       meta: projectMeta(compiled, state, identity),
       gates: projectGates(state, identity),
