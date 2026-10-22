@@ -34,3 +34,21 @@
 **Context:** `docs/dev-setup.md` asks for Node 22; this machine has no `node@22` keg and runs Node v26.12.0 (pnpm warns about engines).
 **Decision:** Run all commands with the available Node; all criteria pass on it. Docker remains the authority (Iteration 12).
 **Consequences:** None for code.
+
+## D-007: `orderKnown` and `count` for statically entitled zones  (Iteration 2)
+**Context:** PFR-012 defines `orderKnown: false` only for grant-derived membership; the static case is unspecified, as is `orderKnown` for unordered zones.
+**Decision:** A statically entitled zone always carries `count`, `members` and `orderKnown: true` (also for unordered zones, whose members are sorted by id). `owner` is included when the zone has one (the zone is already visible). Iteration 3 emits `orderKnown: false` only for a membership-only grant.
+**Rejected:** Omitting `orderKnown` for unordered zones (consumers would need two cases).
+**Consequences:** A consumer reads `orderKnown` uniformly.
+
+## D-008: Derived counter "declares no visibility"  (Iteration 2)
+**Context:** `counterAudience` returns `undefined` both for an undeclared derived counter (inherit, PBR-011) and for a declaration that does not cover the viewer's role (hidden).
+**Decision:** "Declared" means the counter's `visibility` record has at least one key (checked on the definition). A declared counter is governed by `counterAudience` only (a `{player: public}` derived counter is hidden from `render`); an undeclared derived counter inherits `zone_count` of `derivedSpec.zone` through `isEntitledToZoneKey`, and is hidden when it has no `derivedSpec`. Stored counters always use `counterAudience`. The value comes from the `derived` evaluator.
+**Rejected:** Falling back to inheritance when the declaration misses the role (would widen an explicit declaration).
+**Consequences:** Same rule must be reused by delta projection (Iteration 5).
+
+## D-009: Placeholder sections and entitlement helper  (Iteration 2)
+**Context:** Scope requires meta/gates/grants present but empty until Iteration 3.
+**Decision:** `meta: {}`, `gates: {open: {}, resolved: {}}`, `grants: {}` in every view. `isEntitledToZoneKey(ctx, zone, key, orientation?)` in `entitlement.ts` is the one static zone-entitlement helper (`zone_count`/`zone_membership`/`zone_order` together; `card_face` per PFR-013, orientation defaults to face down); Iteration 3 wraps it with grants.
+**Rejected:** Separate helpers per key (all three static keys are one rule).
+**Consequences:** Hands-off name and signature for Iterations 3 and 5.
