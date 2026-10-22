@@ -1,3 +1,4 @@
+import { SUPPORTED_ACTION_SCHEMA_VERSIONS } from "../definition/compile/constants.js";
 import { definitionContentHash } from "../definition/identity.js";
 import type { CompiledGameDefinition } from "../definition/types.js";
 import { err, ok } from "../errors/result.js";
@@ -14,31 +15,32 @@ import type { JsonValue, RosterEntry, SessionState } from "../session/state.js";
 import { openBatch } from "../visibility/open-batch.js";
 import { sealBatch } from "../visibility/privileged-batch.js";
 import type { PrivilegedBatch } from "../visibility/privileged-batch.js";
+import { documentToJson, parseDocument } from "./canonical/decode.js";
+import type { PackageError } from "./canonical/decode.js";
 import { stateDigest } from "./canonical/state-schema.js";
+import { decodePackage } from "./package.js";
 import type { ReplayPackage } from "./package.js";
 import { replayError } from "./replay-error.js";
 import type { ReplayError } from "./replay-error.js";
 import type { ResolvedDefinition } from "./resolved-definition.js";
+import {
+  CURRENT_ACTION_SCHEMA_VERSION,
+  PACKAGE_UPGRADERS,
+  rawActionSchemaVersion,
+  upgradeToCurrent,
+} from "./upgrade.js";
+import type { UpgradePolicy } from "./upgrade.js";
+import { encodeUtf8 } from "../util/utf8.js";
+
+/** `current` must be one of `supported`; `upgraders` is the chain applied to raw packages (PFR-053). */
+export type ReplayerConfig = UpgradePolicy;
 
 /**
- * One schema-evolution step (spec §7.4). Declared here so `createReplayer` can accept the
- * configuration now; Iteration 10 owns the chain logic (`upgradeToCurrent`, `assertUpgraderChain`).
+ * A package that has not been decoded yet: its canonical bytes, or its raw JSON as
+ * `{raw}`. `rebuild` upgrades it (PFR-051) before decoding it under the current schema; a
+ * decoded `ReplayPackage` is taken as already current-shaped (D-038).
  */
-export interface PackageUpgrader {
-  readonly from: number;
-  readonly to: number;
-  readonly upgrade: (raw: JsonValue) => Result<JsonValue, string>;
-}
-
-export interface ReplayerConfig {
-  /** `current` must be one of `supported` (default version policy, PFR-050 lands in Iteration 10). */
-  readonly versions: {
-    readonly current: number;
-    readonly supported: readonly number[];
-  };
-  /** Accepted and unused until Iteration 10. */
-  readonly upgraders: readonly PackageUpgrader[];
-}
+export type RawPackage = Uint8Array | { readonly raw: JsonValue };
 
 /** What `onStep` receives after each committed transaction (PFR-047). */
 export interface ReplayStep {
@@ -68,7 +70,7 @@ export interface RebuildResult {
 export interface Replayer {
   rebuild(
     resolved: ResolvedDefinition,
-    pkg: ReplayPackage,
+    pkg: ReplayPackage | RawPackage,
     opts?: RebuildOptions,
   ): Result<RebuildResult, ReplayError>;
   advance(
@@ -98,6 +100,8 @@ function describe(error: unknown): string {
 function checkBinding(
   resolved: ResolvedDefinition,
   pkg: ReplayPackage,
+  recordedVersion: number,
+  supported: readonly number[],
 ): ReplayError | null {
   const { definition } = resolved;
   const mismatch = (field: string, expected: string, actual: string) =>
@@ -107,6 +111,14 @@ function checkBinding(
       `package does not bind to the resolved definition: ${field} is ${actual}, expected ${expected}`,
       { path: field },
     );
+  if (!supported.includes(recordedVersion)) {
+    return replayError(
+      "REPLAY_MISMATCH",
+      0,
+      `unsupported action_schema_version ${String(recordedVersion)}: package does not bind to the resolved definition: actionSchemaVersion is ${String(recordedVersion)}`,
+      { path: "actionSchemaVersion" },
+    );
+  }
   if (pkg.definition.id !== resolved.definitionId) {
     return mismatch(
       "definition.id",
@@ -129,11 +141,11 @@ function checkBinding(
       String(pkg.definition.contentHash),
     );
   }
-  if (pkg.actionSchemaVersion !== definition.schemaVersion) {
+  if (recordedVersion !== definition.schemaVersion) {
     return mismatch(
       "actionSchemaVersion",
       String(definition.schemaVersion),
-      String(pkg.actionSchemaVersion),
+      String(recordedVersion),
     );
   }
   return null;
@@ -266,19 +278,120 @@ function validateConfig(cfg: ReplayerConfig): void {
 
 /**
  * Builds a hook-free `Replayer` (PFR-040..049). `cfg.versions` is validated (`current` is one
- * of `supported`; a bad configuration throws `RangeError`, a programmer error). The upgrader
- * chain is not applied yet: Iteration 10 plugs `upgradeToCurrent(raw)` in before decoding.
+ * of `supported`; a bad configuration throws `RangeError`, a programmer error). `rebuild` also
+ * accepts a raw package (bytes or `{raw}`), which is upgraded before decoding (PFR-051).
  */
 export function createReplayer(cfg: ReplayerConfig): Replayer {
   validateConfig(cfg);
 
+  /**
+   * Decodes a raw package, running the upgrader chain over its JSON first when its
+   * `actionSchemaVersion` is not current (PFR-051). Returns the decoded, current-shaped
+   * package and the version it was recorded under (which binds to the definition, D-039).
+   */
+  function decodeRaw(
+    source: RawPackage,
+  ): Result<{ pkg: ReplayPackage; recorded: number }, ReplayError> {
+    const failed = (errors: readonly PackageError[]) => {
+      const first = errors[0];
+      const more =
+        errors.length > 1 ? ` (+${String(errors.length - 1)} more)` : "";
+      return err(
+        replayError(
+          "REPLAY_INVALID",
+          0,
+          first === undefined
+            ? "package cannot be decoded"
+            : `package cannot be decoded: ${first.code} at ${first.path}: ${first.detail}${more}`,
+          first === undefined ? {} : { path: first.path },
+        ),
+      );
+    };
+    let raw: JsonValue | undefined;
+    let bytes: Uint8Array | undefined;
+    let version: number | undefined;
+    if (source instanceof Uint8Array) {
+      bytes = source;
+      const parsed = parseDocument(source);
+      if (!parsed.ok) return failed(parsed.error);
+      const rawVersion =
+        parsed.value.root.t === "obj"
+          ? parsed.value.root.entries.find(
+              (e) => e.key === "actionSchemaVersion",
+            )
+          : undefined;
+      if (
+        rawVersion !== undefined &&
+        rawVersion.value.t === "num" &&
+        Number.isSafeInteger(Number(rawVersion.value.text)) &&
+        /^-?(0|[1-9][0-9]*)$/.test(rawVersion.value.text)
+      ) {
+        version = Number(rawVersion.value.text);
+      }
+      if (version !== undefined && version !== cfg.versions.current) {
+        const json = documentToJson(parsed.value);
+        if (!json.ok) return failed(json.error);
+        raw = json.value;
+      }
+    } else {
+      raw = source.raw;
+      version = rawActionSchemaVersion(raw);
+    }
+    if (version === undefined || version === cfg.versions.current) {
+      if (bytes === undefined) {
+        const text = JSON.stringify(raw);
+        const encoded = encodeUtf8(text);
+        if (!encoded.ok) return failed([]);
+        bytes = encoded.value;
+      }
+      const decoded = decodePackage(bytes);
+      if (!decoded.ok) return failed(decoded.error);
+      return ok({
+        pkg: decoded.value,
+        recorded: decoded.value.actionSchemaVersion,
+      });
+    }
+    if (raw === undefined) return failed([]);
+    const upgraded = upgradeToCurrent(raw, cfg);
+    if (!upgraded.ok) return upgraded;
+    const encoded = encodeUtf8(JSON.stringify(upgraded.value));
+    if (!encoded.ok) return failed([]);
+    const decoded = decodePackage(encoded.value);
+    if (!decoded.ok) return failed(decoded.error);
+    return ok({ pkg: decoded.value, recorded: version });
+  }
+
   function rebuild(
     resolved: ResolvedDefinition,
-    pkg: ReplayPackage,
+    input: ReplayPackage | RawPackage,
     opts: RebuildOptions = {},
   ): Result<RebuildResult, ReplayError> {
+    if (input instanceof Uint8Array || "raw" in input) {
+      const decoded = decodeRaw(input);
+      if (!decoded.ok) return decoded;
+      return rebuildDecoded(
+        resolved,
+        decoded.value.pkg,
+        decoded.value.recorded,
+        opts,
+      );
+    }
+    return rebuildDecoded(resolved, input, input.actionSchemaVersion, opts);
+  }
+
+  function rebuildDecoded(
+    resolved: ResolvedDefinition,
+    pkg: ReplayPackage,
+    recordedVersion: number,
+    opts: RebuildOptions,
+  ): Result<RebuildResult, ReplayError> {
     const { definition } = resolved;
-    const binding = checkBinding(resolved, pkg);
+    const binding = checkBinding(
+      resolved,
+      pkg,
+      recordedVersion,
+      cfg.versions.supported,
+    );
     if (binding !== null) return err(binding);
 
     const last = pkg.log.length;
@@ -397,10 +510,13 @@ export function createReplayer(cfg: ReplayerConfig): Replayer {
   return { rebuild, advance };
 }
 
-/** The default replayer: version 1 only, no upgraders (Iteration 10 supplies the real policy). */
+/** The default replayer: the real version policy (PFR-053). */
 export const replayer: Replayer = createReplayer({
-  versions: { current: 1, supported: [1] },
-  upgraders: [],
+  versions: {
+    current: CURRENT_ACTION_SCHEMA_VERSION,
+    supported: SUPPORTED_ACTION_SCHEMA_VERSIONS,
+  },
+  upgraders: PACKAGE_UPGRADERS,
 });
 
 /** `replayer.rebuild`, as a free function. */

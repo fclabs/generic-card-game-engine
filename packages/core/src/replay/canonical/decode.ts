@@ -1,6 +1,7 @@
 import { err, ok } from "../../errors/result.js";
 import type { Result } from "../../errors/result.js";
 import { JSON_MAX_DEPTH } from "./canonicalize.js";
+import type { JsonValue } from "../../session/state.js";
 import type { CanonicalSchema } from "./schema.js";
 
 /**
@@ -471,6 +472,75 @@ export function rootMember(
     if (Number.isSafeInteger(n)) return { kind: "int", value: n };
   }
   return { kind: "other" };
+}
+
+/**
+ * The schema-less JSON value of a parsed document (used to hand the raw package to the
+ * upgrader chain, PFR-051). Strict like the decoder: duplicate keys and numbers that are not
+ * safe integers are rejected with a path (the first failure only), so no information is
+ * silently lost or rounded before an upgrader sees it.
+ */
+export function documentToJson(
+  doc: ParsedDocument,
+): Result<JsonValue, readonly PackageError[]> {
+  const fail = (
+    code: PackageErrorCode,
+    path: string,
+    detail: string,
+  ): Result<JsonValue, readonly PackageError[]> =>
+    err([{ code, path, detail }]);
+  const walk = (
+    node: Node,
+    path: string,
+  ): Result<JsonValue, readonly PackageError[]> => {
+    switch (node.t) {
+      case "str":
+        return ok(node.v);
+      case "bool":
+        return ok(node.v);
+      case "null":
+        return ok(null);
+      case "num": {
+        const n = Number(node.text);
+        if (!INT_TEXT.test(node.text) || !Number.isSafeInteger(n)) {
+          return fail("PACKAGE_SCHEMA", path, "expected a safe integer");
+        }
+        return ok(n);
+      }
+      case "arr": {
+        const out: JsonValue[] = [];
+        for (let i = 0; i < node.items.length; i++) {
+          const item = node.items[i];
+          if (item === undefined) continue;
+          const r = walk(item, `${path}[${String(i)}]`);
+          if (!r.ok) return r;
+          out.push(r.value);
+        }
+        return ok(out);
+      }
+      case "obj": {
+        const out: Record<string, JsonValue> = {};
+        for (const entry of node.entries) {
+          const at = IDENT.test(entry.key)
+            ? `${path}.${entry.key}`
+            : `${path}[${JSON.stringify(entry.key)}]`;
+          if (Object.hasOwn(out, entry.key)) {
+            return fail("PACKAGE_DUPLICATE_KEY", at, "duplicate key");
+          }
+          const r = walk(entry.value, at);
+          if (!r.ok) return r;
+          Object.defineProperty(out, entry.key, {
+            value: r.value,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        }
+        return ok(out);
+      }
+    }
+  };
+  return walk(doc.root, "$");
 }
 
 // ---------------------------------------------------------------- schema walk

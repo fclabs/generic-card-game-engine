@@ -220,3 +220,33 @@
 **Decision:** Not replaced: `buildPackage` has no package yet (it folds a stored log before one exists) and its errors carry different `detail` text and `final`-only digest rules.
 **Rejected:** Building a package, then calling `rebuild` (a self-referential check that changes error texts).
 **Consequences:** Two folds exist; both go through `apply` and the primitive check.
+
+## D-038: `rebuild` takes a decoded package or a raw one  (Iteration 10)
+**Context:** PFR-051 upgrades raw JSON before schema decoding, but `rebuild` received an already decoded `ReplayPackage`, and a raw JSON object cannot be told from a decoded package by shape.
+**Decision:** `rebuild(resolved, input, opts?)` with `input: ReplayPackage | RawPackage`, `RawPackage = Uint8Array | {raw: JsonValue}` (a tagged wrapper, so no shape sniffing). Raw input is upgraded (when not current) and decoded inside `rebuild`; a decoded package is replayed as is (it is current-shaped by construction, so no upgrade).
+**Rejected:** A separate `rebuildRaw` method (two paths to keep in sync, free function too); sniffing for `formatVersion` (ambiguous); upgrading a decoded package by re-encoding it (it could never hold an old shape).
+**Consequences:** `decodePackage` is unchanged; callers holding bytes of an older package pass them straight to `rebuild`. The Forker can accept the same union.
+
+## D-039: The recorded version binds the definition; upgraded packages say "current"  (Iteration 10)
+**Context:** After upgrading 1 -> 2 the package says version 2, while the definition (and its content hash) still carry `schemaVersion` 1 (the compiler only knows 1).
+**Decision:** The binding check compares the version the package was RECORDED under (before any upgrade) with `definition.schemaVersion`, and first checks it is in `versions.supported` (`unsupported action_schema_version n`, path `actionSchemaVersion`). The decoded package handed to the fold carries `actionSchemaVersion` = current.
+**Rejected:** Comparing the upgraded version (an old session on its old definition would never replay); skipping the version binding for upgraded packages.
+**Consequences:** A v1 package binds to a v1 definition; moving a session to a v2 definition is a definition change, not an upgrade.
+
+## D-040: `createReplayer` does not validate the chain  (Iteration 10)
+**Context:** Iteration 9's test builds `{current: 2, supported: [1, 2], upgraders: []}` and rebuilds a decoded v1 package; PFR-053 wants a testable injected chain.
+**Decision:** Config validation stays as in D-034. The chain is checked by `assertUpgraderChain` (a unit test for the real constants, VC-364); at run time a missing step is `unsupported action_schema_version <n>` (PFR-052 "no upgrader path").
+**Rejected:** Throwing `RangeError` for a bad chain at construction (breaks the Iteration 9 test and hides the mismatch as an exception).
+**Consequences:** A bad injected chain surfaces per package as `REPLAY_MISMATCH`, not at construction.
+
+## D-041: Upgrade-step details  (Iteration 10)
+**Context:** PFR-050..052 leave the corners open.
+**Decision:** `upgradeToCurrent(raw, policy?)` returns `raw` unchanged when it is not an object with an integer version (the decoder reports it) or the version is current; otherwise upgraders run on a deep copy, the chain stamps `actionSchemaVersion = from + 1` after each step, and a throw or non-object result is `REPLAY_INVALID` seq 0. Bytes become `JsonValue` through the strict tokenizer (`documentToJson`: duplicate keys and non-safe integers rejected), then the upgraded value is re-serialised with `JSON.stringify` and decoded by `decodePackage`; the fast path (current version) decodes the bytes directly. `assertUpgraderChain` reports the first violation in the order given in CONTEXT.md.
+**Rejected:** `JSON.parse` of the bytes (silent duplicate keys, rounding); trusting upgraders not to mutate.
+**Consequences:** The upgrade path tokenises twice; it only runs for old packages.
+
+## D-042: Fixtures of the upgrade tests  (Iteration 10)
+**Context:** PBR-005 needs a golden package per supported version (only v1 exists) and VC-361 an old-shape package.
+**Decision:** `golden-package.json` stays the v1 golden (D-030; VC-364 maps version -> file). `fixtures/legacy-v1-package.json` is that package with `counter_adjust.delta` renamed `by` (pretend old shape), listed in `.prettierignore`; a test proves it equals `ageToLegacyV1(golden)`, and that the upgraded form equals the golden with `actionSchemaVersion: 2`. Test-only upgraders are `*.testing.ts` and never join `PACKAGE_UPGRADERS`.
+**Rejected:** A second recorded session (digests would differ from the golden for no gain).
+**Consequences:** Adding version 2 later means a real v2 golden plus replacing the legacy-shape fixture's role.

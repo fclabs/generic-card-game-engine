@@ -21,8 +21,15 @@ export { replayError } from "./replay-error.js";
 export type { ReplayError } from "./replay-error.js";
 export type { ResolvedDefinition } from "./resolved-definition.js";
 export { advance, createReplayer, rebuild, replayer } from "./replayer.js";
+export {
+  assertUpgraderChain,
+  CURRENT_ACTION_SCHEMA_VERSION,
+  PACKAGE_UPGRADERS,
+  upgradeToCurrent,
+} from "./upgrade.js";
+export type { PackageUpgrader, UpgradePolicy } from "./upgrade.js";
 export type {
-  PackageUpgrader,
+  RawPackage,
   RebuildOptions,
   RebuildResult,
   ReplayStep,
