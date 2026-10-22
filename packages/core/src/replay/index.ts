@@ -20,3 +20,12 @@ export { replayPackageSchema } from "./package-schema.js";
 export { replayError } from "./replay-error.js";
 export type { ReplayError } from "./replay-error.js";
 export type { ResolvedDefinition } from "./resolved-definition.js";
+export { advance, createReplayer, rebuild, replayer } from "./replayer.js";
+export type {
+  PackageUpgrader,
+  RebuildOptions,
+  RebuildResult,
+  ReplayStep,
+  Replayer,
+  ReplayerConfig,
+} from "./replayer.js";

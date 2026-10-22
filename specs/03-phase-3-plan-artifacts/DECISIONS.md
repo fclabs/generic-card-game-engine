@@ -178,3 +178,45 @@
 **Decision:** `packages/core/src/replay/golden-package.json` is listed in `.prettierignore` (the only config change). The fixture is the P1 property definition with golden stream steps 1-11 plus step 12 extended by `lifecycle completed`, so the 12 transactions commit every primitive kind. Tolerated by the decoder, rejected by content: log gap reports the first violation only; `formatVersion` is peeked before the schema walk so a future format reports `PACKAGE_FORMAT_VERSION` alone.
 **Rejected:** A pretty-printed golden file (not the canonical bytes); a wrapper object (not "the package bytes").
 **Consequences:** Regenerate with `UPDATE_GOLDEN=1`; reviewers diff the bytes by hand.
+
+## D-031: A seat without a player does not invalidate `initial`  (Iteration 9)
+**Context:** PFR-042 says "a seat without a player makes the initial state invalid", but the golden fixture (and the P1 property roster) seat three seats with one player, and VC-351 must replay it.
+**Decision:** The roster is rebuilt from `initial.roster.seats` for `createSession`; it is invalid when `createSession` rejects it (undeclared or missing seat, bad team, duplicate player), when `status` is not the fresh `seated`, or when digests differ. A seat entry with no `player` is valid.
+**Rejected:** Requiring a player on every seat (rejects the golden package and every session that starts with open seats).
+**Consequences:** "Roster that does not match" (VC-353) is tested with a missing seat, an undeclared seat and a changed status.
+
+## D-032: Replay starts from the rebuilt initial state  (Iteration 9)
+**Context:** Decoded packages are unfrozen; `apply` needs a deep-frozen state; freezing `pkg.initial` would mutate the caller's package.
+**Decision:** Once `pkg.initial`'s digest equals a fresh `createSession(def, pkg.sessionId, roster)` digest, the fresh (already deep-frozen, unshared) state is the starting point. `initial.id` is ignored (the digest excludes it, PBR-009); the replayed state's `id` is `pkg.sessionId`.
+**Rejected:** `deepFreeze(pkg.initial)` (side effect on input); cloning `initial` (needless once equality is proven).
+**Consequences:** The package value is never touched; a package whose `initial.id` differs from `sessionId` replays.
+
+## D-033: `onStep` error type and pass-through  (Iteration 9)
+**Context:** Spec types `onStep` as `Result<void>` (error `EngineError`) but `rebuild` fails with a `ReplayError`; PFR-047 says it stops "with that error".
+**Decision:** `onStep` returns `Result<void, ReplayError>` and `rebuild` returns that very error object (identity). A step error is not wrapped or re-seq'd.
+**Rejected:** Wrapping an `EngineError` into a `REPLAY_INVALID` (loses "that error"); a lying cast.
+**Consequences:** Callers (Forker, tests) build errors with `replayError`.
+
+## D-034: Replayer configuration declared now  (Iteration 9)
+**Context:** `createReplayer({versions, upgraders})` is Iteration 9 scope with upgraders unused; `PackageUpgrader` belongs to Iteration 10.
+**Decision:** `PackageUpgrader` is declared in `replayer.ts` (`upgrade(raw: JsonValue): Result<JsonValue, string>`); `createReplayer` throws `RangeError` for `current` not a positive integer in `supported`, duplicates in `supported`, or non-array `upgraders`. The default `replayer` is `{current: 1, supported: [1], upgraders: []}`. `rebuild` still compares `actionSchemaVersion` with the definition's (PFR-041), not with `versions`.
+**Rejected:** Returning a `Result` from `createReplayer` (the interface fixes `Replayer`); creating `upgrade.ts` early (Iteration 10's file).
+**Consequences:** Iteration 10 moves the type, adds `upgradeToCurrent(raw)` before decode, and may let `versions` drive PFR-050.
+
+## D-035: What "random sessions" means for VC-350  (Iteration 9)
+**Context:** VC-350 says "random definitions"; the generators target one definition (`buildPropertyDefinition`).
+**Decision:** `buildLiveSession(tape, {transactions})` plays `generateBatch` over the property definition (3 seats, templates, counters, gates, grants, shuffles, zone create/destroy, lifecycle), keeping committed batches only; `replay-properties.test.ts` runs 600 tapes (seed 20261022, `CGE_REPLAY_RUNS`), 1-40 transactions, half through `encodePackage`/`decodePackage`, comparing live digests, final state and seq at every step. It asserts the generated kinds include move, shuffle, grant_view, zone_create.
+**Rejected:** Random compiled definitions (no generator exists; out of scope).
+**Consequences:** Definition variety comes from the random visibility/metadata of the generated sessions, not from the definition itself.
+
+## D-036: Hook-free check without hooks on the definition  (Iteration 9)
+**Context:** VC-355 asks for a definition "whose hook functions are sentinels"; `CompiledGameDefinition` carries only `hookBindings` (ids), hook functions live in bundles outside core.
+**Decision:** The test sets `hookBindings` on the definition and holds throwing sentinel functions in a table that is never passed to replay (nothing in `rebuild`/`advance` accepts one); it replays the golden package with both and asserts zero calls. The static half scans non-test files in `replay/` for `HookRunner`, `ReactionHook`, `ValidationHook` (comments stripped) and any `spi/` import. `forkFromSeq` joins the sentinel test in Iteration 11.
+**Rejected:** Adding sentinel fields to the definition type.
+**Consequences:** The structural guarantee is the absence of any hook input in the replay API.
+
+## D-037: `buildPackage` keeps its own fold  (Iteration 9)
+**Context:** Iteration 8 noted `rebuild` may replace `buildPackage`'s fold if behaviour is identical.
+**Decision:** Not replaced: `buildPackage` has no package yet (it folds a stored log before one exists) and its errors carry different `detail` text and `final`-only digest rules.
+**Rejected:** Building a package, then calling `rebuild` (a self-referential check that changes error texts).
+**Consequences:** Two folds exist; both go through `apply` and the primitive check.
