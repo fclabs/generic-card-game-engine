@@ -8,7 +8,7 @@ Operational limits and failures that show up often while working in this workspa
 - **macOS and Linux only.** Windows (native, WSL, Docker Desktop on Windows) is unsupported.
 - **The sample server config needs a key.** `config/server.yaml` reads `ENGINE_HOST_KEY` (16 to 256 characters). Export it before `docker compose -f deploy/docker-compose.yml up`; an unexported variable reaches the container as an empty string and fails validation (see below). `docker compose -f deploy/docker-compose.yml config` validates the compose file without starting anything.
 - **Runtime image is a placeholder.** The default command is `node packages/server/dist/index.js`, which currently exits 0 immediately. There is no `/healthz` / `/readyz` yet, and nothing yet turns a failing `loadServerConfig` into a process exit: use `pnpm config:check`.
-- **Definitions are built and hashed, never run.** Visibility declarations, hook execution and reducer binding are later phases; see [game-definitions.md](./game-definitions.md#limitations).
+- **Definitions are built and hashed, never run.** Hook execution and reducer binding are a later phase; see [game-definitions.md](./game-definitions.md#limitations).
 - **Remote CI timings and gating** (cold/warm container jobs on GitHub-hosted runners, cache-hit logs, “forbidden commit fails at lint and skips later jobs”) are verified statically in-repo; end-to-end proof waits for the first real pull request.
 
 ## Common gotchas

@@ -21,8 +21,11 @@ This page explains what the kernel is for, how to call it, what it guarantees an
 | Rule extension points (types only) | `core/spi`: hooks, reducers, effects |
 | Infrastructure contracts (types only) | `core/ports`: store, ledger, authorization, lease, publisher, timers, definition registry |
 | Helpers | `validateAction`, `maskGates`, `nextZoneId`, `ratioRound` |
+| Projecting state for a viewer | `projectView`, `projectDelta`, `projectLogEntry`, `wouldReveal`, `buildRoleRegistry`, `validateViewer` (see [visibility.md](./visibility.md)) |
+| Replay packages | `encodePackage`, `decodePackage`, `buildPackage`, `decodeCanonical` (see [replay-package.md](./replay-package.md)) |
+| Replaying and forking | `rebuild`, `advance`, `createReplayer`, `forkFromSeq`, `PACKAGE_UPGRADERS`, `assertUpgraderChain` |
 
-The kernel does not parse YAML, run hooks, project views, store anything or talk to a network. It defines the data types and the transition function those layers are built on. The definition compiler (`compileDefinition`) and the identity hashes are part of `@cge/core` because they are pure; reading files, parsing YAML, bundling hooks and loading definitions from disk live in `@cge/config` (see [game-definitions.md](./game-definitions.md)).
+The kernel does not parse YAML, run hooks, store anything or talk to a network. It defines the data types and the transition function those layers are built on. The definition compiler (`compileDefinition`) and the identity hashes are part of `@cge/core` because they are pure; reading files, parsing YAML, bundling hooks and loading definitions from disk live in `@cge/config` (see [game-definitions.md](./game-definitions.md)).
 
 ## Using it
 
@@ -181,7 +184,7 @@ Behaviours worth knowing before writing a caller:
 - **Counters** are exact `bigint`s checked against `min` and `max` inclusive. With a `ratio`, amounts are rounded with the counter's declared mode (`floor`, `half_up`, `half_even`). `scale` is descriptive and never enters arithmetic. `counter_transfer` credits the target and sends any rounding remainder to `remainder_to`; a transfer between counters that alias computes the net change first and checks bounds on the final values.
 - **Conservation groups** are checked once at the end of the batch, so a transient imbalance between two actions is legal. A group's sum may change only through `counter_adjust` on a member with a `supply_role`. The direction of mint and burn is not enforced.
 - **Zone templates.** Zone ids are derived as `<template>/<ownerToken>/<ordinal>` (`ownerToken` is the owner id, or `_` for an ownerless template) and are never reused. `maxInstances` counts the live zones of a template across all owners. `nextZoneId(state, template, owner, pending)` returns the id a `zone_create` will receive, so later actions in the same batch can target it.
-- **Grants** get the id `grant/<seq+1>/<i>`, where `i` is the index in the committed primitive list; replaying the committed list as one batch reproduces ids. The kernel stores and expires grants; giving them meaning when a view is projected is later work. Only single-card, single-zone and top-of-zone targets are accepted.
+- **Grants** get the id `grant/<seq+1>/<i>`, where `i` is the index in the committed primitive list; replaying the committed list as one batch reproduces ids. The kernel stores and expires grants; what a grant reveals is decided when a view is projected (see [Projection](#projection)). Only single-card, single-zone and top-of-zone targets are accepted.
 - **Roster reducers.** `join`, `leave`, `substitute` and `set_status` are handled by a reducer the definition supplies; the kernel validates its output. A roster reducer receives the whole `roster` action as its payload and may only return a new `roster` partition. Without a roster reducer these four operations are `MALFORMED_ACTION`, unless the definition declares one by name (`rosterReducerRef`) that is not bound yet, which is `REDUCER_ERROR`. `delegate` and `revoke_delegation` need no reducer.
 - **Control.** `control_advance` walks the turn order, counting only seats whose status is `seated`; `mode: "until_quiescent"` is not supported. `control_set` validates phase and seats but does not check pointer names against the declared names.
 - **Lifecycle.** `active -> completed`, `active -> terminated` and `completed -> terminated` are the only transitions. A `lifecycle` action must be the last action of its batch. On a `completed` session the only admitted batch is exactly `[lifecycle(terminated)]`; on a `terminated` session every batch, including `[]`, fails with `SESSION_ENDED`. A successful result carries one `SessionEnded` notification per lifecycle action; the final outcome is also readable from `state.outcome`.
@@ -237,10 +240,30 @@ What can still throw is limited to programmer errors: an invalid argument to `un
 | `errors/` | `ErrorCode`, `EngineError`, `GameRejection`, `Result` |
 | `session/` | ids, snapshots, state types, `createSession`, `apply`, PRNG, action validation, `maskGates`, `nextZoneId`, `ratioRound` |
 | `definition/` | `CompiledGameDefinition`, `assertDefinitionStructure`, `definitionData`, the compiler (`compileDefinition`, `definitionNeedsBundle`, error codes and limits) and the identity hashes |
-| `replay/canonical/` | canonical JSON, schemas, SHA-256, `stateDigest`, golden vectors |
+| `replay/canonical/` | canonical JSON, `decodeCanonical`, schemas, SHA-256, `stateDigest`, golden vectors |
+| `replay/` | the replay package, `Replayer`, `Forker`, the version upgrade chain |
+| `visibility/` | roles, visibility policy, `projectView`, `projectDelta`, `wouldReveal`, the branded `View`/`Delta` and opaque `PrivilegedBatch` |
 | `spi/` | rule SPI types |
 | `ports/` | port interfaces |
 | `util/` | internal helpers (UTF-8 encoder), not exported |
+
+### Projection
+
+`apply` works on the omniscient state. Nobody outside the engine receives it: `core/visibility` turns it into role-scoped values. The full reference, with the entitlement model and worked examples, is [visibility.md](./visibility.md); the shape of it is:
+
+- `projectView(def, state, viewer)` returns a `View`, `projectDelta(def, pre, post, batch, viewer)` the `Delta` one committed transaction means for that viewer, `projectLogEntry` the same value for the role-filtered log, and `wouldReveal(def, pre, post, batch, grantee?)` the `once` grants that transaction consumes. A viewer is `{role, subject?}`; unknown roles and subjects, and privileged roles (`dealer`, `auditor`) the definition does not register, are errors, never a default view.
+- **Fail closed.** An absent `visibility` declaration hides the entity. Grants only add entitlement. The types back this up: a `Snapshot` cannot be passed where a `View` is expected (both `View` and `Delta` are branded and only the projector makes them), and a transaction crosses into projection as an opaque `PrivilegedBatch` that only the projector and the replayer can open, enforced by a dependency rule.
+- Projection is pure and total over valid input: no clock, no randomness, no I/O, no mutation. Edge nodes that fold the log with `advance` produce exactly the views the committing node does.
+- **Derived counters.** A derived counter that declares its own visibility is governed by it even over a hidden input zone; one that declares none inherits the `zone_count` entitlement of its input zone.
+
+### Replay
+
+`core/replay` rebuilds states from a recorded log and never runs a hook. The reference is [replay-package.md](./replay-package.md); in short:
+
+- A **replay package** (canonical JSON, language-agnostic) carries the definition binding, the initial state, the log of committed primitive transactions, the receipts and optional digests. `encodePackage` and `decodePackage` write and read it; `buildPackage` assembles one from a stored session.
+- `rebuild(resolved, pkg, opts?)` binds the package to the definition (`REPLAY_MISMATCH` on any difference), checks the initial state, folds the log through `apply` without a proposal and verifies recorded digests. `uptoSeq` replays a prefix; `verify: "every"` reports a digest per step. Shuffles use their logged permutation, so replay never consults the PRNG. A reducer that is not bound is `REPLAY_INVALID`, never skipped. The live digest equals the replay digest at every `seq`; that is the property the kernel's determinism exists to make true.
+- `advance(resolved, state, batch)` is one step of `rebuild` for edge caches; `forkFromSeq(resolved, pkg, n, {sessionId})` makes a new session from the first `n` transactions. A fork and its original share a digest at every common `seq` because the digest excludes the session id.
+- **Old packages keep replaying.** A package recorded under an older `action_schema_version` is upgraded over its raw JSON by an ordered, append-only chain of `PackageUpgrader`s; an unsupported version is `REPLAY_MISMATCH`, never silently misread.
 
 ### The `apply` pipeline
 
@@ -310,7 +333,7 @@ These are choices the kernel makes where the surrounding documents left room. Ca
 - **No gate quorum, timeouts or nested gates.** Gates are open, submit, retract, resolve. Submission payloads are opaque canonical JSON.
 - **No engine-side roster defaults.** `join` and `leave` do not instantiate counters or zones; a roster reducer that writes anything outside the roster is a `REDUCER_ERROR`.
 - **Actions have no canonical byte form.** Committed actions are compared structurally; digests cover state only.
-- **Grant selectors are limited** to a single card, a single zone or the top of an ordered zone.
+- **Grant selectors are limited** to a single card, a single zone or the top of an ordered zone (no ranges or filters).
 - **`control_advance` supports no `mode`.**
 
 ### What later phases add
@@ -318,7 +341,7 @@ These are choices the kernel makes where the surrounding documents left room. Ca
 | Phase | Builds on the kernel by |
 |-------|-------------------------|
 | P2 (shipped) | Compiling YAML into `CompiledGameDefinition`, content identity, the definition registry port and filesystem adapter, load-time errors, server configuration: see [game-definitions.md](./game-definitions.md). Deciding whether to enforce pointer names is still open |
-| P3 | Projecting state into role-specific views (using `maskGates` and grants), replay and fork on top of `apply` and the canonical module, the package format |
+| P3 (shipped) | Projecting state into role-specific views, deltas and log entries, the replay package format, hook-free replay, fork and the schema-evolution upgrade chain: see [visibility.md](./visibility.md) and [replay-package.md](./replay-package.md) |
 | P4 | Running hooks behind the SPI types, with timeouts and cost budgets |
 | P5 | Implementing the store, ledger and related ports |
 | P6 | The application pipeline: proposals, idempotency, authorization, choosing which housekeeping actions to emit, cascade limits, and the host-level error codes the kernel only declares |
@@ -347,7 +370,7 @@ Commands (from the repository root, under Node 22 as described in [dev-setup.md]
 ```sh
 pnpm test                                    # builds, then all unit and property tests
 pnpm exec vitest run packages/core           # only the kernel
-pnpm test:coverage                           # V8 coverage; session and replay/canonical stay above 95 % lines
+pnpm test:coverage                           # V8 coverage; session, visibility and replay stay above 95 % lines
 pnpm test:guardrails                         # determinism, layering and repository invariants
 docker compose -f deploy/docker-compose.test.yml run --rm tests
 ```
