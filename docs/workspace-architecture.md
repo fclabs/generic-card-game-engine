@@ -30,6 +30,8 @@ Edges are expressed three ways so they fail early and consistently:
 2. `package.json` `dependencies` using `workspace:*` `@cge/*` only, with one deliberate exception: `packages/config` also has the npm runtime dependencies `yaml`, `zod` and `esbuild`, each at an exact version (`packages/core` has no `dependencies` at all)
 3. `dependency-cruiser` named rules (path **or** `@cge/*` specifier, including relative paths into another package’s `src`/`dist`)
 
+Beyond the layering rules, the named rule `core-privileged-batch-opener` (Phase 3, PFR-032) lets only `packages/core/src/visibility/**` and `packages/core/src/replay/**` import the `open-batch` module that opens a `PrivilegedBatch`; with the twelve original rules, depcheck enforces thirteen named rules (the guardrail suite lists them in `SECTION_73_RULES`).
+
 Intra-package imports use relative paths ending in `.js` (NodeNext ESM), never `@cge/<self>`.
 
 Package names are `@cge/<dir>` for top-level packages and tools, and `@cge/adapter-<dir>` for adapters. Exactly thirteen workspace members today (twelve under `packages/**` plus `@cge/guardrails`). The local ESLint plugin lives in a plain `eslint/` directory so it does not become a fourteenth member.

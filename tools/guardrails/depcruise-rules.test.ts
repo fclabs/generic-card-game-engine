@@ -26,7 +26,7 @@ describe("depcruise fixtures (FR-041 / VC-027–VC-033 / VC-041)", () => {
     },
   );
 
-  it("covers all 12 §7.3 rules plus VC-031 legitimate-directions (VC-041)", () => {
+  it("covers all 13 rules (§7.3 plus core-privileged-batch-opener) and VC-031 legitimate-directions (VC-041)", () => {
     const rulesSeen = new Set<string>();
     for (const c of depcruiseCases) {
       for (const r of c.expect) {
@@ -142,6 +142,21 @@ describe("VC-033 circular and undeclared", () => {
         "no-circular-cross",
         "no-undeclared-deps",
       ]),
+    );
+  });
+});
+
+describe("VC-337 privileged batch opener", () => {
+  it("lists the violating and allowed cases and the rule", () => {
+    expect(SECTION_73_RULES).toContain("core-privileged-batch-opener");
+    const byId = new Map(
+      depcruiseCases.filter((c) => c.vc === "VC-337").map((c) => [c.id, c]),
+    );
+    expect(byId.get("core-privileged-batch-opener-app")?.expect).toEqual([
+      "core-privileged-batch-opener",
+    ]);
+    expect(byId.get("core-privileged-batch-opener-allowed")?.expect).toEqual(
+      [],
     );
   });
 });

@@ -82,3 +82,15 @@
 **Decision:** `buildEntitlementContext(policy, state, viewer, {grants?, exclude?})`. `EntitlementContext` keeps `policy`, `state`, `viewer` and adds pre-resolved `zoneKeys`/`cardKeys` maps of the applicable grants. `isEntitledToZoneKey` became grant-aware; the old rule is `isStaticallyEntitledToZoneKey`. Derived-counter inheritance (D-008) now sees grants because it calls `isEntitledToZoneKey`.
 **Rejected:** Recomputing grants per question (cost, and no single exclusion point).
 **Consequences:** Iterations 5 and 6 build contexts per (state, viewer), passing the pre/post union or an excluded id.
+
+## D-015: PrivilegedBatch representation and accessor  (Iteration 4)
+**Context:** PFR-030 wants the payload in a module-private `WeakMap` of the batch module and readable only through `openBatch`, which lives in another module (`open-batch.ts`, the one the dependency rule guards).
+**Decision:** The handle is `Object.freeze(Object.create(null))` (no keys, no symbols, `JSON.stringify` -> `{}`, `structuredClone`/spread lose the payload); the brand is a type-only `declare const` symbol. `privileged-batch.ts` owns the `WeakMap` and exports `sealBatch` plus an internal `readSealedBatch` used only by `open-batch.ts`; no index re-exports it. `openBatch` throws `TypeError` for a value `sealBatch` did not create; `batchSeq` returns `Seq | null` (`tx.seq`).
+**Rejected:** Putting the `WeakMap` in `open-batch.ts` (contradicts the spec's module split); a registration hook between the two modules (mutable global, order-dependent).
+**Consequences:** `readSealedBatch` is internal by convention only; the rule covers `open-batch`. Replay code imports `open-batch` directly.
+
+## D-016: Brand construction types and rule scope  (Iteration 4)
+**Context:** Branding `View` makes `makeView(sections: View)` uncallable with a literal; the rule must also catch fixture trees and built output.
+**Decision:** `makeView` takes `ViewSections = Omit<View, typeof viewBrand>`; `Delta` is declared with `DeltaSections` the same way (Iteration 5 adds its single constructor). The rule's `to.path` matches `packages/core/(src|dist)/visibility/open-batch(.d).(ts|js)` and `^@cge/core/.*open-batch`; `from.pathNot` is `packages/core/src/(visibility|replay)/` (tests beside those sources are allowed). `SECTION_73_RULES` (the guardrail rule list) gained the rule; its listing test title now says 13 rules.
+**Rejected:** Exporting the brand symbols (would let callers forge brands).
+**Consequences:** Anything outside visibility/replay that needs a batch's content cannot import `open-batch`.

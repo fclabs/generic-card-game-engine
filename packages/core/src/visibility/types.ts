@@ -74,11 +74,17 @@ export interface GrantView {
   readonly scope: JsonValue;
 }
 
+declare const viewBrand: unique symbol;
+declare const deltaBrand: unique symbol;
+
 /**
  * The projection of a session state for one viewer (spec §7.2). Plain JSON.
- * Only `makeView` (make-view.ts) creates values of this type.
+ * Carries a type-only unique-symbol brand (PFR-031): a `Snapshot` or an object
+ * literal is not assignable. Only `makeView` (make-view.ts) creates values of
+ * this type; the brand has no runtime representation.
  */
 export interface View {
+  readonly [viewBrand]: true;
   readonly seq: number;
   readonly lifecycle: Lifecycle;
   readonly viewer: ViewerIdentity;
@@ -110,3 +116,65 @@ export interface View {
   readonly grants: Readonly<Record<GrantId, GrantView>>;
   readonly outcome?: JsonValue;
 }
+
+/** A `View` without its brand: the sections `makeView` accepts. */
+export type ViewSections = Omit<View, typeof viewBrand>;
+
+/** One card-movement event of a `Delta`; fields present only when entitled (PFR-024, PFR-025). */
+export type DeltaEntry =
+  | {
+      readonly i: number;
+      readonly kind: "move";
+      readonly card_id?: CardId;
+      readonly from_zone?: ZoneId;
+      readonly to_zone?: ZoneId;
+      readonly from_position?: number;
+      readonly to_position?: number;
+      readonly face?: CardView["face"];
+    }
+  | {
+      readonly i: number;
+      readonly kind: "flip";
+      readonly card_id: CardId;
+      readonly orientation: Orientation;
+      readonly face?: CardView["face"];
+    }
+  | {
+      readonly i: number;
+      readonly kind: "shuffle";
+      readonly zone: ZoneId;
+      readonly permutation?: readonly CardId[];
+    }
+  | {
+      readonly i: number;
+      readonly kind: "set_metadata";
+      readonly card_id: CardId;
+      readonly fields: Readonly<Record<string, JsonValue>>;
+    }
+  | {
+      readonly i: number;
+      readonly kind: "zone_create" | "zone_destroy";
+      readonly zone_id: ZoneId;
+    };
+
+/**
+ * The visible effect of one committed batch for one viewer (spec §7.2).
+ * Branded like `View`; produced only by the projector (Iteration 5).
+ */
+export interface Delta {
+  readonly [deltaBrand]: true;
+  readonly seq: number;
+  readonly entries: readonly DeltaEntry[];
+  readonly zoneCounts: Readonly<Record<ZoneId, number>>;
+  readonly counters: Readonly<Record<CounterId, string>>;
+  readonly control?: View["control"];
+  readonly roster?: Readonly<Record<SeatId, View["roster"][SeatId] | null>>;
+  readonly meta?: Readonly<Record<string, JsonValue | null>>;
+  readonly gates?: Readonly<Record<GateId, GateView | null>>;
+  readonly grants?: Readonly<Record<GrantId, GrantView | null>>;
+  readonly lifecycle?: Lifecycle;
+  readonly outcome?: JsonValue;
+}
+
+/** A `Delta` without its brand. */
+export type DeltaSections = Omit<Delta, typeof deltaBrand>;

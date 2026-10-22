@@ -13,7 +13,17 @@ export {
   resolveAudience,
 } from "./policy.js";
 export type { VisibilityPolicy } from "./policy.js";
-export type { CardView, GateView, GrantView, View, ZoneView } from "./types.js";
+export type {
+  CardView,
+  Delta,
+  DeltaEntry,
+  GateView,
+  GrantView,
+  View,
+  ZoneView,
+} from "./types.js";
+export { sealBatch } from "./privileged-batch.js";
+export type { PrivilegedBatch } from "./privileged-batch.js";
 export { projectView } from "./project-view.js";
 export { VIEW_SECTION_ORDER } from "./make-view.js";
 export {

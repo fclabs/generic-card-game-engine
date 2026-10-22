@@ -1,4 +1,4 @@
-import type { View } from "./types.js";
+import type { View, ViewSections } from "./types.js";
 
 /**
  * Section order of a `View` (PFR-011, PFR-021). `outcome` is last and present
@@ -23,7 +23,7 @@ export const VIEW_SECTION_ORDER = [
  * `VIEW_SECTION_ORDER`; `outcome` is omitted when undefined (never an
  * `undefined` property, PFR-021).
  */
-export function makeView(sections: View): View {
+export function makeView(sections: ViewSections): View {
   const view: Record<string, unknown> = {};
   for (const key of VIEW_SECTION_ORDER) {
     const value = sections[key];

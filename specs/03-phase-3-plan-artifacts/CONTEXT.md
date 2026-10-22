@@ -1,10 +1,16 @@
-# CONTEXT (Phase 3, after Iteration 3)
+# CONTEXT (Phase 3, after Iteration 4)
 
 ## Current state
-- Iterations done: 1 (roles, viewer validation, policy), 2 (`projectView` zones, cards, counters, engine sections; trick-taking fixture), 3 (meta partitions, gates, additive grants, `View.grants`). `projectView` is complete. Next: 4 (fail-closed types, opener dependency rule).
-- `visibility/` now has `types.ts` (adds `View`, `ZoneView`, `CardView`, `GateView`, `GrantView`), `make-view.ts`, `entitlement.ts`, `project-view.ts`, `fixtures.testing.ts`, `project-view.test.ts`. `projectView`, `View` types, `VIEW_SECTION_ORDER`, `isEntitledToZoneKey` are exported from `@cge/core`. No `Delta`, `PrivilegedBatch`, brand or replay package yet.
-- Entitlement composition (Iteration 3) lives in `visibility/entitlement.ts`; see "Entitlement composition" below. `project-view-grants.test.ts` covers VC-312 grant parts, VC-317..320, VC-305 projection half.
-- Repo builds; lint, typecheck, depcheck, format:check green. Local Node is v26 (D-006).
+- Iterations done: 1 (roles, viewer validation, policy), 2 (`projectView` zones/cards/counters/engine), 3 (meta, gates, grants), 4 (fail-closed types: branded `View`/`Delta`, opaque `PrivilegedBatch`, rule `core-privileged-batch-opener`). Next: 5 (`projectDelta`, `projectLogEntry`).
+- `visibility/` now also has `privileged-batch.ts`, `open-batch.ts`, `privileged-batch.test.ts`; `types.ts` declares `Delta`, `DeltaEntry`, `ViewSections`, `DeltaSections`. `sealBatch` and the types `PrivilegedBatch`, `Delta`, `DeltaEntry` are exported from `@cge/core`; `openBatch`/`batchSeq`/`readSealedBatch` are NOT.
+- Repo builds; lint, typecheck, depcheck, format:check, guardrails green. Local Node is v26 (D-006).
+
+## Fail-closed types (Iteration 4)
+- `View` and `Delta` carry a type-only `declare const` unique-symbol brand key (`[viewBrand]: true`, `[deltaBrand]: true`; no runtime property). `ViewSections = Omit<View, brand>` and `DeltaSections` are what constructors accept. `makeView(sections: ViewSections): View` is the only `View` creator; Iteration 5 must add the same kind of single choke point (`makeDelta(sections: DeltaSections): Delta`, in a new module) for `Delta`.
+- `PrivilegedBatch`: frozen null-prototype empty object, type-only brand. Payload (`Transaction`) in the module-private `WeakMap` in `privileged-batch.ts`. `sealBatch(tx: Transaction): PrivilegedBatch` (public). `openBatch(batch): Transaction` (throws `TypeError` for a foreign value) and `batchSeq(batch): Seq | null` live in `open-batch.ts`; they read the map via the internal `readSealedBatch` of `privileged-batch.ts` (not in any index).
+- Dependency rule `core-privileged-batch-opener` (`.dependency-cruiser.cjs`): any file outside `packages/core/src/(visibility|replay)/` importing `packages/core/(src|dist)/visibility/open-batch.(ts|js|d.ts)` or `@cge/core/**open-batch` fails. Guardrail fixtures `core-privileged-batch-opener-app` (violates) and `-allowed` (replay + visibility, clean) in `tools/guardrails/fixtures/depcruise/`, cases in `tools/guardrails/depcruise-cases.ts` (`SECTION_73_RULES` now lists 13 rules). `docs/workspace-architecture.md` mentions the rule.
+- Type tests: `visibility/privileged-batch.test.ts` (`@ts-expect-error` / `expectTypeOf`), part of the core test tsconfig (`packages/core/tsconfig.test.json`, run by `pnpm typecheck`; an unused `@ts-expect-error` fails it) and the runtime half runs under vitest.
+- Replay code (Iterations 8+) that opens batches imports `../visibility/open-batch.js` directly.
 
 ## P1/P2 as-built facts a projector author needs
 - **Definition** (`definition/types.ts`, `CompiledGameDefinition`): `roles: RoleDecl[] {id, subject: required|optional|forbidden}`; `zones[] {id, ordered, owner?, visibility}`; `zoneTemplates[] {name, ownerRule: seat|team|player|none, ordered, maxInstances, visibility}`; `counters[] {id, owner, ownerId?, visibility, derived?, derivedSpec?: {kind:'zone_size', zone}}`; `cards[] {id, type?, metadataSchema, startingZone, initialMetadata, metadataVisibility: field -> public|subject|secret}`; `metaSchemas[] {id, fields, fieldVisibility, reducerRef, reducer?}`; `seats[] {id, team?}`; `teams`; `viewKeys`; `control`.
@@ -58,13 +64,14 @@ buildVisibilityPolicy(def): VisibilityPolicy   // frozen; zoneAudience(zone, tem
                                                // cardFieldVisibility(card, field), metaFieldVisibility(schemaId, field)
 isEntitled(audience: Audience|undefined, owner: string|undefined, viewer, state): boolean
 projectView(def, state: Snapshot<SessionState>, viewer: ViewerIdentity): Result<View>
+sealBatch(tx: Transaction): PrivilegedBatch                          // exported; openBatch(batch): Transaction and batchSeq(batch): Seq|null are not
 isEntitledToZoneKey(ctx: EntitlementContext, zone: ZoneId, key: ZoneKey, orientation?: Orientation): boolean  // grant-aware
 buildEntitlementContext, expandGrantee, isGrantee, isGrantInScope, resolveGrantTarget, isEntitledToCardKey, isStaticallyEntitledToZoneKey, isStaticallyEntitledToGrant, withoutGrants  // all exported
 ```
 Order in `validateViewer`: role known -> subject rule (forbidden+subject = SUBJECT_NOT_ALLOWED; required+none = UNKNOWN_SUBJECT) -> subject in `state.roster.seats` (UNKNOWN_SUBJECT) -> privileged registered (VIEW_DENIED).
 
 ## Conventions & invariants
-- Visibility modules import only from `session`, `definition`, `errors` (relative `./x.js`); no `node:*`.
+- Visibility modules import only from `session`, `definition`, `errors` (and type-only `ports/types`); relative `./x.js`; no `node:*`. Only `visibility/**` and `replay/**` import `open-batch`.
 - Fail closed: `undefined` audience never entitles; `owner`/`team` never entitle without a subject; `team` needs a team (D-002).
 - `projectView` never shares references with the state (arrays/objects copied, JSON cloned); output is not frozen and has no `undefined` properties.
 - Derived counters: declared (non-empty `visibility`) -> governed by it via `counterAudience`; non-empty-check is on the definition, not on the audience lookup (D-008). Undeclared derived without `derivedSpec` is hidden.
@@ -73,11 +80,11 @@ Order in `validateViewer`: role known -> subject rule (forbidden+subject = SUBJE
 
 ## Commands (verbatim, from repo root)
 - `pnpm build && pnpm exec vitest run packages/core/src/visibility packages/core/src/definition`
+- `pnpm exec vitest run --config vitest.guardrails.config.ts`
 - `pnpm lint`, `pnpm typecheck`, `pnpm depcheck`, `pnpm format:check` (fix: `pnpm exec prettier --write <paths>`)
 - Full gate (final): `pnpm lint && pnpm format:check && pnpm typecheck && pnpm depcheck && pnpm test:all`
 
 ## Known gaps
 - `docs/game-definitions.md` (~line 153) and `docs/game-definition-schema.md` (RESERVED_NAME row ~414) still say built-in roles are `DUPLICATE_ID`; fix in Iteration 13.
-- `View` is a plain structural type, not branded (Iteration 4).
 - Default test definition `viewKeys` is `["hand","public"]`: grant tests must override `viewKeys` with the four zone keys (`build()` in `project-view-grants.test.ts` does).
-- No `Delta`, `PrivilegedBatch`, replay package: Iterations 4-13.
+- No `projectDelta`/`wouldReveal` and no replay package yet: Iterations 5-13. `readSealedBatch` is internal by convention only (the rule guards `open-batch`).
