@@ -6,3 +6,4 @@ dist/
 coverage/
 tools/guardrails/fixtures/**
 packages/config/fixtures/**
+packages/core/src/replay/golden-package.json

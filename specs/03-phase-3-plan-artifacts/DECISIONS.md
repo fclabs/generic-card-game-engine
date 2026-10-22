@@ -148,3 +148,33 @@
 **Decision:** `CGE_VISIBILITY_RUNS` (default 2000) cases per role class and property, split over `SEEDS` (4 fixed seeds); VC-344 and VC-376 default to min(runs, 500); `CGE_VISIBILITY_SEED` runs one seed. A case is one generated (definition, session, batches) tuple checked for every viewer of the class at every state/step. VC-342 runs twice (grant-free whole stream, and with grants per step). Failures are rethrown with property, class, seed and the shrunk tape.
 **Rejected:** One shared constant like P1's `RUNS` (the suite would be unusable at the floor on a laptop with no way to shorten it).
 **Consequences:** The default suite adds about 95 s in one file; `CGE_VISIBILITY_RUNS=100` is the quick run.
+
+## D-026: `decodePackage` needs no definition; definition-independent state node  (Iteration 8)
+**Context:** `buildStateSchema(definition)` uses the definition's metadata and meta field schemas, but `decodePackage(bytes, opts?)` takes no definition (spec §7.4) and the package must decode before its definition is resolved.
+**Decision:** The package schema embeds `packageStateNode`: the digest schema's layout with `json` nodes for card `metadata` and `meta` partitions, `id` first, no `derivedCounters`. For engine-produced values `json` and the typed nodes emit identical bytes (sorted keys, strings, safe integers, booleans), so no definition is needed to encode or decode. The Replayer (Iteration 9) checks the decoded `initial` against the definition by digest (PFR-042) and must catch `CanonicalError`.
+**Rejected:** Two-phase decode with a resolved definition (changes the `decodePackage` signature and blocks inspection tools); decoding `initial` as a raw `json` value (loses `bigint` counters, forcing a second decode).
+**Consequences:** A package whose metadata violates the definition decodes fine and is rejected at replay; decoded metadata/meta values are plain JSON.
+
+## D-027: `buildPackage` takes `resolved`, defines `ReplayError`/`ResolvedDefinition` early  (Iteration 8)
+**Context:** Spec §7.4 gives `buildPackage(stored, receipts, opts?)`, but `StoredSession` has no `gameId` and digests need the definition's schemas and reducers; the types `ReplayError` and `ResolvedDefinition` belong to the Replayer (Iteration 9) yet `buildPackage` returns/needs them.
+**Decision:** `opts` is required and carries `resolved: ResolvedDefinition` (plus `digests`, `params`). `ReplayError` (`replay-error.ts`, with the `replayError` constructor) and `ResolvedDefinition` (`resolved-definition.ts`) are created now and reused by Iterations 9-11. Digests come from a local fold over `apply` (no proposal, macros rejected); `final` records the last seq only and an empty log has no digests. Binding mismatches are `REPLAY_MISMATCH` (field in `path`), log/replay problems `REPLAY_INVALID` with `seq`/`actionIndex`. Duplicate receipt keys are `REPLAY_INVALID`.
+**Rejected:** Reading `gameId` from nowhere / leaving it empty; waiting for the Replayer (would leave PFR-038 unimplemented).
+**Consequences:** Iteration 9 may re-implement the fold through `rebuild`; the observable behaviour must stay.
+
+## D-028: Where `decodeCanonical` and `PackageError` are exported  (Iteration 8)
+**Context:** PFR-035 says "added to the canonical module", but `replay/canonical/index.test.ts` (VC-068, P1) pins that index to four runtime exports, and VC-370 allows changing only two pre-existing tests.
+**Decision:** `decode.ts` lives in `replay/canonical/` but is exported from `replay/index.ts` (and `@cge/core`), not from `replay/canonical/index.ts`. `PackageError`/`PackageErrorCode` are declared in `decode.ts` (the decoder reports four of the codes) and re-exported from `package.ts`, which is where PFR-039 places them.
+**Rejected:** Editing the VC-068 test; duplicating the types.
+**Consequences:** None for callers of the package root.
+
+## D-029: Action and receipt nodes; `initial.id` travels  (Iteration 8)
+**Context:** The canonical profile has no tagged union, and actions carry `bigint` (`delta`, `amount`, `ratio`) that a plain `json` node cannot hold; `Receipt` has nullable fields no node expresses.
+**Decision:** `actionNode` is one object: `kind` then every payload field of every kind, sorted, all optional, typed (`bigint` as decimal strings, `pointer` as `json` because `control_set` and `control_advance` disagree). `receipt.result/errorCode/seq/detail` are `json` nodes; `decodePackage` re-checks `errorCode` (null or an engine code) and `seq` (null or non-negative). `initial` includes its `id` (the "full" state), so a fork may keep or rewrite it (Iteration 11 decides).
+**Rejected:** One schema per action kind (would need a union node, a profile change); dropping `id` (breaks deep-equal of decode(encode(pkg))).
+**Consequences:** The schema accepts an action with a field its kind does not use; PFR-043 validation in the Replayer rejects it.
+
+## D-030: Golden package fixture and tooling  (Iteration 8)
+**Context:** VC-345 compares `encodePackage` with the committed file byte for byte; Prettier would rewrite a one-line canonical JSON file.
+**Decision:** `packages/core/src/replay/golden-package.json` is listed in `.prettierignore` (the only config change). The fixture is the P1 property definition with golden stream steps 1-11 plus step 12 extended by `lifecycle completed`, so the 12 transactions commit every primitive kind. Tolerated by the decoder, rejected by content: log gap reports the first violation only; `formatVersion` is peeked before the schema walk so a future format reports `PACKAGE_FORMAT_VERSION` alone.
+**Rejected:** A pretty-printed golden file (not the canonical bytes); a wrapper object (not "the package bytes").
+**Consequences:** Regenerate with `UPDATE_GOLDEN=1`; reviewers diff the bytes by hand.
