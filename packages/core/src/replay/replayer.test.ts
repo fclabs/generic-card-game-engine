@@ -374,6 +374,7 @@ describe("VC-355 hook-free replay", () => {
       (f) => f.endsWith(".ts") && !f.endsWith(".test.ts"),
     );
     expect(files).toContain("replayer.ts");
+    expect(files).toContain("forker.ts");
     for (const f of files) {
       const src = readFileSync(`${dir}${f}`, "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "")

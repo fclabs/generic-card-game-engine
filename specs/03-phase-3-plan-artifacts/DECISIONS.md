@@ -250,3 +250,15 @@
 **Decision:** `golden-package.json` stays the v1 golden (D-030; VC-364 maps version -> file). `fixtures/legacy-v1-package.json` is that package with `counter_adjust.delta` renamed `by` (pretend old shape), listed in `.prettierignore`; a test proves it equals `ageToLegacyV1(golden)`, and that the upgraded form equals the golden with `actionSchemaVersion: 2`. Test-only upgraders are `*.testing.ts` and never join `PACKAGE_UPGRADERS`.
 **Rejected:** A second recorded session (digests would differ from the golden for no gain).
 **Consequences:** Adding version 2 later means a real v2 golden plus replacing the legacy-shape fixture's role.
+
+## D-043: `forkFromSeq` takes a decoded package and verifies by replaying  (Iteration 11)
+**Context:** Iteration 10 left open whether the forker accepts raw input; PFR-054 needs the state at `n` and a session-id re-key.
+**Decision:** `pkg` is a decoded `ReplayPackage` (a caller holding bytes or an old package decodes/upgrades first, so the fork's `actionSchemaVersion` is current by construction). The fork package is built first (new id on `initial` and `sessionId`) and the state is the result of `replayer.rebuild` on it up to `n`, so binding, initial state and recorded digests `<= n` are verified in one pass and the state already carries the new id.
+**Rejected:** Rebuilding the source and re-keying the state afterwards (a second code path for the id, no check that the fork package itself replays); a raw-input overload (an upgraded fork would need a version stamp rule of its own).
+**Consequences:** A tampered source digest after `n` does not block a fork before it; one before `n` does.
+
+## D-044: Fork errors and copies  (Iteration 11)
+**Context:** PFR-054/056 fix the codes and two detail texts only.
+**Decision:** Session id errors are checked before `n`; all fork-specific errors are `REPLAY_INVALID` at seq 0 (`invalid session id`, `same session id`, `fork seq out of range: n (the log ends at seq L)`). The package is copied with a local plain-data deep copy (own data properties, `bigint` kept) and then `deepFreeze`d, so the source is never frozen as a side effect and no object is shared. `continueFork` lives in `forker.testing.ts`, not exported.
+**Rejected:** `structuredClone` (not in core's allowed globals/types); freezing shared objects (would mutate the source's frozen flags).
+**Consequences:** A fork result cannot be extended in place; hosts build a new package value (as `continueFork` does).

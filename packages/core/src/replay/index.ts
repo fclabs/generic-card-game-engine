@@ -20,6 +20,8 @@ export { replayPackageSchema } from "./package-schema.js";
 export { replayError } from "./replay-error.js";
 export type { ReplayError } from "./replay-error.js";
 export type { ResolvedDefinition } from "./resolved-definition.js";
+export { forkFromSeq } from "./forker.js";
+export type { ForkResult } from "./forker.js";
 export { advance, createReplayer, rebuild, replayer } from "./replayer.js";
 export {
   assertUpgraderChain,
