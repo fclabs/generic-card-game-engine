@@ -1,14 +1,28 @@
 import type {
   CompiledGameDefinition,
   CounterDecl,
+  MetaSchemaDecl,
 } from "../definition/types.js";
 import { ok } from "../errors/result.js";
 import type { Result } from "../errors/result.js";
-import type { CardId, CounterId, SeatId, ZoneId } from "../session/ids.js";
-import { getOwn, setOwn } from "../session/records.js";
+import type {
+  CardId,
+  CounterId,
+  GateId,
+  GrantId,
+  SeatId,
+  ZoneId,
+} from "../session/ids.js";
+import { getOwn, hasOwn, setOwn } from "../session/records.js";
 import type { Snapshot } from "../session/snapshot.js";
 import type { JsonValue, SessionState } from "../session/state.js";
-import { isEntitledToZoneKey } from "./entitlement.js";
+import {
+  buildEntitlementContext,
+  isEntitledToCardKey,
+  isEntitledToZoneKey,
+  isGrantee,
+  isStaticallyEntitledToGrant,
+} from "./entitlement.js";
 import type { EntitlementContext } from "./entitlement.js";
 import { makeView } from "./make-view.js";
 import { buildVisibilityPolicy, isEntitled } from "./policy.js";
@@ -20,6 +34,8 @@ import {
 } from "./roles.js";
 import type {
   CardView,
+  GateView,
+  GrantView,
   RoleRegistry,
   View,
   ViewerIdentity,
@@ -35,6 +51,8 @@ interface Compiled {
   readonly templateOrdered: ReadonlyMap<string, boolean>;
   /** Counters sorted by id. */
   readonly counters: readonly CounterDecl[];
+  /** Declared meta schemas sorted by id. */
+  readonly metaSchemas: readonly MetaSchemaDecl[];
 }
 
 const cache = new WeakMap<CompiledGameDefinition, Compiled>();
@@ -49,6 +67,7 @@ function compile(def: CompiledGameDefinition): Compiled {
     zoneOrdered: new Map(def.zones.map((z) => [z.id as string, z.ordered])),
     templateOrdered: new Map(def.zoneTemplates.map((t) => [t.name, t.ordered])),
     counters: [...def.counters].sort((a, b) => compareIds(a.id, b.id)),
+    metaSchemas: [...def.metaSchemas].sort((a, b) => compareIds(a.id, b.id)),
   };
   cache.set(def, compiled);
   return compiled;
@@ -99,37 +118,184 @@ function projectZones(
   const zones: Record<ZoneId, ZoneView> = {};
   for (const id of Object.keys(state.zones).sort(compareIds)) {
     const zoneId = id as ZoneId;
-    if (!isEntitledToZoneKey(ctx, zoneId, "zone_membership")) continue;
     const zone = state.zones[zoneId]!;
+    const count = isEntitledToZoneKey(ctx, zoneId, "zone_count");
+    const full = isEntitledToZoneKey(ctx, zoneId, "zone_membership");
+    const orderKnown = full && isEntitledToZoneKey(ctx, zoneId, "zone_order");
     const ordered =
       compiled.zoneOrdered.get(id) ??
       (zone.template === undefined
         ? undefined
         : compiled.templateOrdered.get(zone.template)) ??
       false;
-    const ids = ordered ? zone.members : [...zone.members].sort(compareIds);
-    const members: CardView[] = ids.map((cardId) => {
-      const card = getOwn(state.cards, cardId)!;
-      const view: CardView = {
-        id: cardId,
-        orientation: card.orientation,
-      };
-      return isEntitledToZoneKey(ctx, zoneId, "card_face", card.orientation)
-        ? {
-            ...view,
-            face: projectFace(compiled, cardId, card.metadata, viewer),
-          }
-        : view;
-    });
+    // Whole-zone membership lists every member; otherwise only the cards a
+    // card-level grant entitles (PFR-012, PFR-019).
+    const listed = full
+      ? zone.members
+      : zone.members.filter(
+          (cardId) =>
+            isEntitledToCardKey(ctx, cardId, "zone_membership") ||
+            isEntitledToCardKey(ctx, cardId, "card_face"),
+        );
+    if (!count && listed.length === 0) continue;
+    const members: CardView[] | undefined =
+      listed.length === 0 && !full
+        ? undefined
+        : (ordered && orderKnown ? listed : [...listed].sort(compareIds)).map(
+            (cardId) => {
+              const card = getOwn(state.cards, cardId)!;
+              const view: CardView = {
+                id: cardId,
+                orientation: card.orientation,
+              };
+              return isEntitledToCardKey(ctx, cardId, "card_face")
+                ? {
+                    ...view,
+                    face: projectFace(compiled, cardId, card.metadata, viewer),
+                  }
+                : view;
+            },
+          );
     setOwn<ZoneView>(zones, zoneId, {
       ordered,
       ...(zone.owner !== undefined ? { owner: zone.owner } : {}),
-      count: members.length,
-      members,
-      orderKnown: true,
+      ...(count ? { count: zone.members.length } : {}),
+      ...(members !== undefined ? { members, orderKnown } : {}),
     });
   }
   return zones;
+}
+
+/** PFR-017. */
+function projectMeta(
+  compiled: Compiled,
+  state: Snapshot<SessionState>,
+  viewer: ViewerIdentity,
+): Record<string, JsonValue> {
+  const out: Record<string, JsonValue> = {};
+  const seats = state.roster.seats;
+  for (const schema of compiled.metaSchemas) {
+    const partition = getOwn(state.meta, schema.id);
+    if (
+      typeof partition !== "object" ||
+      partition === null ||
+      Array.isArray(partition)
+    ) {
+      continue;
+    }
+    const fields: Record<string, JsonValue> = {};
+    const record = partition as { readonly [key: string]: JsonValue };
+    for (const field of Object.keys(record).sort(compareIds)) {
+      const visibility = compiled.policy.metaFieldVisibility(schema.id, field);
+      const value = record[field]!;
+      if (visibility === "public") {
+        setOwn(fields, field, cloneJson(value));
+      } else if (visibility === "secret") {
+        if (isPrivilegedRole(viewer.role)) {
+          setOwn(fields, field, cloneJson(value));
+        }
+      } else if (visibility === "subject") {
+        const own = subjectEntries(value, seats, viewer);
+        if (own !== undefined) setOwn(fields, field, own);
+      }
+    }
+    if (Object.keys(fields).length > 0) setOwn(out, schema.id, fields);
+  }
+  return out;
+}
+
+/**
+ * A `subject` field value: an object whose keys are all seat ids, projected
+ * to the viewer's own entry (a registered auditor gets all). Other shapes and
+ * an empty projection are omitted (D-010).
+ */
+function subjectEntries(
+  value: JsonValue,
+  seats: Snapshot<SessionState>["roster"]["seats"],
+  viewer: ViewerIdentity,
+): JsonValue | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as { readonly [key: string]: JsonValue };
+  const keys = Object.keys(record);
+  if (!keys.every((k) => getOwn(seats, k) !== undefined)) return undefined;
+  const shown =
+    viewer.role === "auditor"
+      ? keys
+      : viewer.subject !== undefined && keys.includes(viewer.subject)
+        ? [viewer.subject as string]
+        : [];
+  if (shown.length === 0) return undefined;
+  const out: Record<string, JsonValue> = {};
+  for (const key of [...shown].sort(compareIds)) {
+    setOwn(out, key, cloneJson(record[key]!));
+  }
+  return out;
+}
+
+/** PFR-018. */
+function projectGates(
+  state: Snapshot<SessionState>,
+  viewer: ViewerIdentity,
+): View["gates"] {
+  const seeAll = viewer.role === "auditor";
+  const visible = (
+    submissions: Readonly<Record<SeatId, JsonValue>>,
+  ): Record<SeatId, JsonValue> | undefined => {
+    const out: Record<SeatId, JsonValue> = {};
+    for (const seat of Object.keys(submissions).sort(compareIds)) {
+      if (seeAll || seat === viewer.subject) {
+        setOwn(out, seat, cloneJson(submissions[seat as SeatId]!));
+      }
+    }
+    return Object.keys(out).length === 0 ? undefined : out;
+  };
+  const open: Record<GateId, GateView> = {};
+  for (const id of Object.keys(state.gates.open).sort(compareIds)) {
+    const gate = state.gates.open[id as GateId]!;
+    const submissions = visible(gate.submissions);
+    setOwn<GateView>(open, id, {
+      schemaId: gate.schemaId,
+      expectedSeats: [...gate.expectedSeats],
+      submitted: gate.expectedSeats.filter((seat) =>
+        hasOwn(gate.submissions, seat),
+      ),
+      ...(submissions !== undefined ? { submissions } : {}),
+    });
+  }
+  const resolved: Record<GateId, GateView> = {};
+  for (const id of Object.keys(state.gates.resolved).sort(compareIds)) {
+    const gate = state.gates.resolved[id as GateId]!;
+    const submissions = visible(gate.submissions);
+    setOwn<GateView>(resolved, id, {
+      schemaId: gate.schemaId,
+      expectedSeats: [...gate.expectedSeats],
+      ...(submissions !== undefined ? { submissions } : {}),
+    });
+  }
+  return { open, resolved };
+}
+
+/** PFR-020: a grant is listed for its grantees and the statically entitled. */
+function projectGrants(ctx: EntitlementContext): Record<GrantId, GrantView> {
+  const { state, viewer } = ctx;
+  const out: Record<GrantId, GrantView> = {};
+  for (const id of Object.keys(state.grants).sort(compareIds)) {
+    const grant = state.grants[id as GrantId]!;
+    if (
+      isGrantee(state, grant, viewer) ||
+      isStaticallyEntitledToGrant(ctx, grant)
+    ) {
+      setOwn<GrantView>(out, id, {
+        target: cloneJson(grant.target),
+        keys: [...grant.keys],
+        grantee: grant.grantee,
+        scope: cloneJson(grant.scope),
+      });
+    }
+  }
+  return out;
 }
 
 /** PFR-015, PBR-011. */
@@ -166,8 +332,8 @@ function projectCounters(
 
 /**
  * Projects `state` for `viewer` (PFR-011..016, PFR-021, PFR-022): pure, never
- * mutates its inputs, plain JSON out. `meta`, `gates` and `grants` are empty
- * placeholders until Iteration 3.
+ * mutates its inputs, plain JSON out. Meta partitions (PFR-017), gates
+ * (PFR-018) and grants (PFR-019, PFR-020) included.
  */
 export function projectView(
   def: CompiledGameDefinition,
@@ -182,11 +348,7 @@ export function projectView(
     viewer.subject === undefined
       ? { role: viewer.role }
       : { role: viewer.role, subject: viewer.subject };
-  const ctx: EntitlementContext = {
-    policy: compiled.policy,
-    state,
-    viewer: identity,
-  };
+  const ctx = buildEntitlementContext(compiled.policy, state, identity);
 
   const roster: Record<
     SeatId,
@@ -225,9 +387,9 @@ export function projectView(
         pointers,
       },
       roster,
-      meta: {},
-      gates: { open: {}, resolved: {} },
-      grants: {},
+      meta: projectMeta(compiled, state, identity),
+      gates: projectGates(state, identity),
+      grants: projectGrants(ctx),
       ...(state.outcome !== undefined
         ? { outcome: cloneJson(state.outcome) }
         : {}),

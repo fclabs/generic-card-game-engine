@@ -16,5 +16,21 @@ export type { VisibilityPolicy } from "./policy.js";
 export type { CardView, GateView, GrantView, View, ZoneView } from "./types.js";
 export { projectView } from "./project-view.js";
 export { VIEW_SECTION_ORDER } from "./make-view.js";
-export { isEntitledToZoneKey } from "./entitlement.js";
-export type { EntitlementContext, ZoneKey } from "./entitlement.js";
+export {
+  buildEntitlementContext,
+  expandGrantee,
+  isEntitledToCardKey,
+  isEntitledToZoneKey,
+  isGrantee,
+  isGrantInScope,
+  isStaticallyEntitledToGrant,
+  isStaticallyEntitledToZoneKey,
+  resolveGrantTarget,
+  withoutGrants,
+} from "./entitlement.js";
+export type {
+  CardKey,
+  EntitlementContext,
+  GrantSelection,
+  ZoneKey,
+} from "./entitlement.js";

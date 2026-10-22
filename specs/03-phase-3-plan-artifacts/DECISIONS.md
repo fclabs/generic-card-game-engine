@@ -52,3 +52,33 @@
 **Decision:** `meta: {}`, `gates: {open: {}, resolved: {}}`, `grants: {}` in every view. `isEntitledToZoneKey(ctx, zone, key, orientation?)` in `entitlement.ts` is the one static zone-entitlement helper (`zone_count`/`zone_membership`/`zone_order` together; `card_face` per PFR-013, orientation defaults to face down); Iteration 3 wraps it with grants.
 **Rejected:** Separate helpers per key (all three static keys are one rule).
 **Consequences:** Hands-off name and signature for Iterations 3 and 5.
+
+## D-010: Meta `subject` fields  (Iteration 3)
+**Context:** PFR-017 projects a `subject` field "to the entry for the viewer's own seat" but not what happens when the viewer has no entry or the object is empty.
+**Decision:** A `subject` value qualifies iff it is a (non-array) object whose keys are all seats of `state.roster.seats`. The projection is the viewer's own entry, or all entries for `auditor`; if the projection has no entry the field is omitted (so a partition with only such fields is absent). Meta fields without a declared visibility never appear; non-object partitions are skipped; `dealer`/`render` without a subject get no subject field; `secret` shows for `dealer` and `auditor` (registered, since validated).
+**Rejected:** Emitting `{}` for a qualifying value with no visible entry (it would reveal the field's presence).
+**Consequences:** Delta projection (Iteration 5) reuses `projectMeta` semantics.
+
+## D-011: Grantee expansion and seat status  (Iteration 3)
+**Context:** PFR-019 names status only for `all_seated`; the plan text says "seated seats only".
+**Decision:** `all_seated` = seats with status `seated`; `team:<id>` = every seat of that team and a seat-id grantee = that seat, whatever their status. `expandGrantee(state, grantee)` is the hands-off name.
+**Rejected:** Filtering every expansion by `seated` (the spec distinguishes `all_seated` explicitly).
+**Consequences:** A `sitting_out` seat addressed by seat id or team still receives the grant.
+
+## D-012: Where grant-derived content appears in a `View`  (Iteration 3)
+**Context:** The View shape has no place for a face outside a zone; PFR-012 gives `count`-only, membership-only and `orderKnown: false` cases.
+**Decision:** A card-level grant (`card` target or resolved `top`) makes that card appear in its zone's `members` (sorted by id, `orderKnown: false`, zone `count` only if count-entitled); with `card_face` it carries its face in any orientation. A zone appears iff count-entitled or some member is listed. Whole-zone membership via grant gives all members, `orderKnown` true only if order-entitled (static, or a `zone_order` grant on the zone); a `zone_order` grant without membership has no effect. `top` resolves to `zone.members[0]` against the state being projected; an empty zone gives no effect. A key without meaning for the target (e.g. `zone_order` on a card) is dropped. A statically entitled zone is unchanged (D-007).
+**Rejected:** A separate `View` section for granted faces (changes the PFR-011 shape).
+**Consequences:** Granting `card_face` on a hidden-zone card reveals that the card is in that zone.
+
+## D-013: Grant listing and scope  (Iteration 3)
+**Context:** PFR-020 lists grants by grantee/static entitlement; expiry is `engine.grant_expire` (P6).
+**Decision:** `View.grants` ignores scope expiry: a grant still in `state.grants` is listed to its grantees (role not `dealer`/`auditor`, subject in the expansion) and to viewers statically entitled to every named key; its effect on zones, cards and counters follows `until_seq` (`state.seq < n`). Static entitlement to a card-target grant uses the card's current orientation (a face-down card in an auditor-`public` hand is not face-entitled); a zone target's `card_face` needs every current member face-entitled (vacuous when empty); unresolvable targets (unknown card/zone, empty `top`) and meaningless keys are not statically entitled (fail closed).
+**Rejected:** Hiding expired grants from the list (state would then differ between expiry and `engine.grant_expire`).
+**Consequences:** Delta (Iteration 5) uses the same predicates.
+
+## D-014: Shape of the composition helper  (Iteration 3)
+**Context:** The plan hands off "(state, viewer) -> EntitlementContext"; entitlement also needs the policy.
+**Decision:** `buildEntitlementContext(policy, state, viewer, {grants?, exclude?})`. `EntitlementContext` keeps `policy`, `state`, `viewer` and adds pre-resolved `zoneKeys`/`cardKeys` maps of the applicable grants. `isEntitledToZoneKey` became grant-aware; the old rule is `isStaticallyEntitledToZoneKey`. Derived-counter inheritance (D-008) now sees grants because it calls `isEntitledToZoneKey`.
+**Rejected:** Recomputing grants per question (cost, and no single exclusion point).
+**Consequences:** Iterations 5 and 6 build contexts per (state, viewer), passing the pre/post union or an excluded id.
