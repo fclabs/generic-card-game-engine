@@ -262,3 +262,27 @@
 **Decision:** Session id errors are checked before `n`; all fork-specific errors are `REPLAY_INVALID` at seq 0 (`invalid session id`, `same session id`, `fork seq out of range: n (the log ends at seq L)`). The package is copied with a local plain-data deep copy (own data properties, `bigint` kept) and then `deepFreeze`d, so the source is never frozen as a side effect and no object is shared. `continueFork` lives in `forker.testing.ts`, not exported.
 **Rejected:** `structuredClone` (not in core's allowed globals/types); freezing shared objects (would mutate the source's frozen flags).
 **Consequences:** A fork result cannot be extended in place; hosts build a new package value (as `continueFork` does).
+
+## D-045: Where the end-to-end, edge-path and replay-error tests live  (Iteration 12)
+**Context:** VC-378/379/376 need both `visibility` (projector, property checks) and `replay` (Replayer, Forker, packages); `replay` imports `visibility/open-batch`, and a `visibility` test importing `replay` would make a cycle that `no-circular` rejects.
+**Decision:** `end-to-end.test.ts`, `edge-path.test.ts`, `replay-error-details.test.ts` and the shared `trick-session.testing.ts` live in `replay/` (which may import `visibility`). The floor fixture `visibility/floor.testing.ts` is shared by both performance tests (replay imports visibility, not the reverse). Edge path runs 500 cases per class and property by default (`CGE_EDGE_RUNS`), since each state is also proven equal (digest and deep equality) to the live one; the live properties keep 2 000.
+**Rejected:** `visibility/` homes for these tests (cycle); 2 000 edge cases (would double the 95 s property time for no extra information once states are identical).
+**Consequences:** `replay/` test count grows; no guardrail change.
+
+## D-046: Performance fixture, workloads and heap measurement  (Iteration 12)
+**Context:** VC-373 fixes the floor and thresholds but not the visibility rules, the batches, or how to measure heap. The P1 floor definition declares no visibility and no counters beyond three.
+**Decision:** `buildVisibilityFloor` = the P1 floor (14 seats, 4 teams, 700 cards, 64 zones) with 14 owner hands (auditor public), 26 public zones, 24 hidden zones (dealer public), 40 counters (14 owner, 24 public, 2 derived), card metadata with public/subject/secret fields, `conservationGroups: []`, and public-zone cards face up. `projectView` is measured for player, render (with and without subject), auditor and dealer plus a worst case (every zone public to every role, all cards face up: 82 KB); `projectDelta` for 20 moves in public zones for the same viewers; `wouldReveal` for 5 `once` zone grants (one grantee each) and 20 moves out of the granted hands; package tests use 1 000 transactions of 5 `move`s with `digests: 'none'`. Heap = retained growth of `rebuild` with its result alive, after two forced GCs (`node:v8` + `node:vm` to obtain `gc`, test-only), median of 5. Default ceilings are 10x the spec thresholds; strict (spec numbers) with `CGE_PERF_STRICT=1` or `/.dockerenv`, as P1/P2.
+**Rejected:** Peak-heap sampling inside `onStep` (noisy without GC control); `all_seated` grantees for `wouldReveal` (spec says "5 once grants", not a worst-case grantee set); a node `--expose-gc` runner flag (config change).
+**Consequences:** Measured numbers are in CONTEXT.md and the Iteration 12 record; the margins are 2-4 orders of magnitude, so the strict bounds are robust on a slower runner.
+
+## D-047: Static no-`node:*` check lives in a core test; guardrails unchanged  (Iteration 12)
+**Context:** The plan asks for a check that `core/src/{visibility,replay}` import no `node:*`; PFR-058 permits no guardrail change beyond the PFR-032 rule and its fixtures. The existing `core-no-node` rule already covers all of `packages/core`.
+**Decision:** `replay/purity.test.ts` scans every non-test `.ts` file of both folders for `node:*` and bare built-in specifiers. VC-371's "still fails" is shown by experiment (a `node:fs` import in each folder fails `depcruise` with `core-no-node`) and by the existing guardrail suite; no new guardrail fixture was added.
+**Rejected:** New depcruise fixtures for `visibility/` and `replay/` (a guardrail change PFR-058 does not list).
+**Consequences:** None.
+
+## D-048: Replay-error leak scan scope  (Iteration 12)
+**Context:** VC-376 says replay errors "never contain metadata values or gate payloads of the fixture"; PBR-008 allows card, zone and counter ids.
+**Decision:** `replay-error-details.test.ts` forces 38 failing calls (binding, initial state, log integrity, digest, uptoSeq, unbound reducer, fork errors, raw-bytes version/decode errors) on the trick-taking session and requires that no error (code, detail, path, decode error lists) contains any card metadata value, gate payload, counter value (also tampered-in values) of the session. A caller-supplied name echoed by an unknown-key or game-id error is exempt. All errors already passed; no source change.
+**Rejected:** Scanning only `detail` (paths and decode error lists could leak).
+**Consequences:** A future error text that echoes a value fails this test.

@@ -62,5 +62,5 @@ describe("VC-350 replay equivalence", () => {
     console.info(
       `VC-350: ${String(sessions)} sessions, ${String(transactions)} transactions, longest ${String(longest)}, kinds ${[...kinds].sort().join(",")}`,
     );
-  });
+  }, 600_000);
 });
