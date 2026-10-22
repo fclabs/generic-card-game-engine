@@ -241,7 +241,7 @@ describe("VC-221 roles and visibility", () => {
       doc({ roles: [{ id: "player", subject: "optional" }] }),
     );
     expect(player[0]).toMatchObject({
-      code: "DUPLICATE_ID",
+      code: "RESERVED_NAME",
       path: "roles[0].id",
       entity: "player",
     });
@@ -262,7 +262,25 @@ describe("VC-221 roles and visibility", () => {
           }),
         ),
       ),
-    ).toEqual([["DUPLICATE_ID", "roles[0].id"]]);
+    ).toEqual([["RESERVED_NAME", "roles[0].id"]]);
+  });
+});
+
+describe("VC-304 built-in role ids are reserved (PFR-007)", () => {
+  it.each(["player", "dealer", "auditor", "render"])(
+    "rejects roles[].id %s with RESERVED_NAME at the role path",
+    (id) => {
+      const errors = failure(doc({ roles: [{ id, subject: "optional" }] }));
+      expect(codePaths(errors)).toEqual([["RESERVED_NAME", "roles[0].id"]]);
+      expect(errors[0]?.entity).toBe(id);
+    },
+  );
+
+  it("a custom spectator still compiles", () => {
+    const def = success(
+      doc({ roles: [{ id: "spectator", subject: "forbidden" }] }),
+    );
+    expect(def.roles).toEqual([{ id: "spectator", subject: "forbidden" }]);
   });
 });
 

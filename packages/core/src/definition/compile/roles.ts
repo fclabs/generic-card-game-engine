@@ -24,7 +24,8 @@ const SUBJECTS = ["required", "optional", "forbidden"] as const;
 
 /**
  * Compiles `roles` (DFR-021): `{id, subject}` items whose ids differ from the
- * built-ins and from each other (`DUPLICATE_ID` at the later occurrence).
+ * built-ins (`RESERVED_NAME`, PFR-007) and from each other (`DUPLICATE_ID` at
+ * the later occurrence).
  * Returns `undefined` when anything was reported.
  */
 export function compileRoles(
@@ -49,15 +50,17 @@ export function compileRoles(
       : undefined;
     if (id === undefined) return;
     if (!checkId(c, id, joinPath(p, "id"), "role id")) return;
-    if (seen.has(id)) {
+    if (BUILT_IN_ROLES.includes(id)) {
       c.add(
-        "DUPLICATE_ID",
+        "RESERVED_NAME",
         joinPath(p, "id"),
-        BUILT_IN_ROLES.includes(id)
-          ? `role "${id}" is built in and cannot be redeclared`
-          : `duplicate role id "${id}"`,
+        `role "${id}" is built in and cannot be redeclared`,
         id,
       );
+      return;
+    }
+    if (seen.has(id)) {
+      c.add("DUPLICATE_ID", joinPath(p, "id"), `duplicate role id "${id}"`, id);
       return;
     }
     seen.add(id);
