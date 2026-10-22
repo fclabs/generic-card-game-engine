@@ -1,9 +1,15 @@
-# CONTEXT (Phase 3, after Iteration 5)
+# CONTEXT (Phase 3, after Iteration 6)
 
 ## Current state
-- Iterations done: 1 (roles, viewer validation, policy), 2 (`projectView` zones/cards/counters/engine), 3 (meta, gates, grants), 4 (fail-closed types, opener rule), 5 (`projectDelta`, `projectLogEntry`). Next: 6 (`wouldReveal`).
+- Iterations done: 1 (roles, viewer validation, policy), 2 (`projectView` zones/cards/counters/engine), 3 (meta, gates, grants), 4 (fail-closed types, opener rule), 5 (`projectDelta`, `projectLogEntry`), 6 (`wouldReveal`). Next: 7 (no-leak/consistency properties).
 - `visibility/` has `make-delta.ts` (`makeDelta`, `DELTA_SECTION_ORDER`, the ONLY `Delta` creator; `makeDelta` is not exported from any index) and `project-delta.ts`. `projectDelta` and `projectLogEntry` are exported from `@cge/core`; `projectLogEntry` is a thin wrapper returning exactly `projectDelta`'s result.
 - Repo builds; lint, typecheck, depcheck, format:check, guardrails green. Local Node is v26 (D-006).
+
+## wouldReveal (Iteration 6)
+- `wouldReveal(def, pre, post, batch, grantee?: SeatId): readonly GrantId[]` in `visibility/would-reveal.ts`, exported from `@cge/core`. Pure. Returns ids ascending (UTF-16) of `once` grants (scope `{kind:"once"}`) present in `pre.grants` such that, for at least one seat of `expandGrantee(pre, grant.grantee)` (role `player`, subject = seat, seat must exist in `post.roster`; optional `grantee` keeps only that seat), the delta differs with the grant excluded. Both deltas use `buildDeltaContexts` (union of pre/post grants; the what-if passes `{exclude: id}`) and `deltaFor`. "Differs" = `JSON.stringify` inequality of the whole `Delta` (deterministic key order = deep equality over every section).
+- A batch not matching `pre`/`post` (`post.seq !== pre.seq + 1` or `tx.seq !== post.seq`) returns `[]` (no error channel, D-021). A grant created by the batch is never in `pre`, so never returned. Redundant grants (two identical once grants) are not returned: removing one changes nothing (D-022).
+- Cost: baseline delta per distinct seat computed lazily and shared, plus one what-if delta per (grant, seat): `O(seats + onceGrants * seatsPerGrant)` evaluations of the batch.
+- Fixtures creating `once` grants: `would-reveal.test.ts` only (`A.grant(target, keys, grantee, {kind: "once"})` on the trick-taking definition with `viewKeys` = the four zone keys); `project-delta.test.ts` has one consumed-once case. Test helper `step(pre, actions)` is local to each test file.
 
 ## Delta projection (Iteration 5)
 - `projectDelta(def, pre, post, batch, viewer): Result<Delta>`: validate viewer against `post` (PFR-002..005 errors) -> `openBatch(batch)`; `post.seq !== pre.seq + 1` or `tx.seq !== post.seq` (incl. `null`) -> `REPLAY_INVALID` "batch does not match pre/post" -> `deltaFor`.
@@ -98,5 +104,5 @@ Order in `validateViewer`: role known -> subject rule (forbidden+subject = SUBJE
 ## Known gaps
 - `docs/game-definitions.md` (~line 153) and `docs/game-definition-schema.md` (RESERVED_NAME row ~414) still say built-in roles are `DUPLICATE_ID`; fix in Iteration 13.
 - Default test definition `viewKeys` is `["hand","public"]`: grant tests must override `viewKeys` with the four zone keys.
-- No `wouldReveal` and no replay package yet: Iterations 6-13. `readSealedBatch` is internal by convention only (the rule guards `open-batch`).
+- No replay package yet: Iterations 8-13. `readSealedBatch` is internal by convention only (the rule guards `open-batch`).
 - A delta carries no content for facts that appear only because a grant was added or a zone/counter became newly entitled without a value change (e.g. `grant_view` of `zone_membership`): the grantee gets the `grants` entry, and the content arrives with the next resync/view. Iteration 7's consistency property (VC-342) must account for it (D-019).

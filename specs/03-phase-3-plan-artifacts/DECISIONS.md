@@ -118,3 +118,15 @@
 **Decision:** `from.pathNot` is now `packages/core/(src|dist)/(visibility|replay)/`. No other rule or fixture changed; the violating fixture (`core-privileged-batch-opener-app`) still fails.
 **Rejected:** Excluding `dist` from the cruise (hides real violations).
 **Consequences:** Replay code in Iteration 9 compiles into `dist/replay`, which is exempt as well.
+
+## D-021: wouldReveal returns [] for a mismatched batch  (Iteration 6)
+**Context:** PFR-029 gives `wouldReveal` a plain `readonly GrantId[]` return (no `Result`), but the batch/pre/post preconditions of PFR-023 can still be violated by a caller.
+**Decision:** If `post.seq !== pre.seq + 1` or the batch seq differs, return `[]` (nothing is revealed by a transaction that is not the one between `pre` and `post`). `openBatch` still throws `TypeError` for a foreign value, as everywhere.
+**Rejected:** Throwing (the signature has no error channel and P6 calls it on the hot path); returning a `Result` (contradicts spec 7.3).
+**Consequences:** P6 must feed the real committed transaction; a wrong pairing silently never consumes grants.
+
+## D-022: Per-grant what-if, not joint removal  (Iteration 6)
+**Context:** PFR-029 says "whose removal ... changes the projected delta". With two grants that grant the same thing, each alone is redundant.
+**Decision:** Each `once` grant is tested alone (the others stay in the union). Identical redundant grants are therefore both omitted; one non-redundant grant is returned. Grantee seats are expanded over `pre`; seats missing from `post.roster` are skipped. Equality is whole-`Delta` JSON equality; baselines per seat are cached across grants.
+**Rejected:** Removing all `once` grants together (would flag grants that add nothing individually); expanding over `post` (a grant being revoked in the batch still needs its seats).
+**Consequences:** Callers (P6) consume only flagged grants; a redundant duplicate stays until it matters on its own.

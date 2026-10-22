@@ -46,3 +46,4 @@ export type {
 } from "./entitlement.js";
 export { projectDelta, projectLogEntry } from "./project-delta.js";
 export { DELTA_SECTION_ORDER } from "./make-delta.js";
+export { wouldReveal } from "./would-reveal.js";
