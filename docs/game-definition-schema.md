@@ -66,10 +66,10 @@ The table lists the keys in the order the compiler validates and reports them. A
 
 | Key | Type / range | Default | Errors |
 |-----|--------------|---------|--------|
-| `roles[].id` | id; not a built-in role; unique | required | `INVALID_VALUE` (charset), `DUPLICATE_ID` (a built-in name or a repeat, reported at the later item) |
+| `roles[].id` | id; not a built-in role; unique | required | `INVALID_VALUE` (charset), `RESERVED_NAME` (a built-in name), `DUPLICATE_ID` (a repeat, reported at the later item) |
 | `roles[].subject` | `required`, `optional` or `forbidden` | required | `INVALID_VALUE` (unknown value), `SCHEMA_MISSING` |
 
-The compiler validates and stores both fields. What `subject` means, and what a custom role sees, is decided by the projection layer (see [What this schema does not do yet](#what-this-schema-does-not-do-yet)).
+The compiler validates and stores both fields. What `subject` means, and what a custom role sees, is decided by the projector (see [visibility.md](./visibility.md)); the spectator recipe there shows a custom role end to end.
 
 ## Seats and teams
 
@@ -269,7 +269,7 @@ A `visibility` block on a zone, template or counter declares who may see it.
 - Values are audiences: `public`, `hidden`, `owner` or `team`.
 - `owner` and `team` need an owner: a fixed zone with `owner_id`, a template whose `owner` is not `none`, or a counter that is not `table`-owned.
 - An unknown role key, an unknown audience, or `owner`/`team` on an unowned entity is `INVALID_VISIBILITY` at `...visibility.<key>`, naming the entity. A block that is not a mapping, or an audience that is not a string, is `SCHEMA_TYPE`.
-- An absent block compiles to `{}`: "no declaration". The projection layer treats that as not visible to external views.
+- An absent block compiles to `{}`: "no declaration". The projector treats that as not visible to anyone (see [visibility.md](./visibility.md)).
 
 Field visibility (`public`, `subject`, `secret`) on card metadata and meta schema fields is declared per field and is required.
 
@@ -408,10 +408,10 @@ YAML is parsed as **1.2 core schema**: `yes`, `no`, `on` and `off` are strings, 
 | `SCHEMA_TYPE` | A value of the wrong type: a string where a list is expected, a float where an integer is required, a non-mapping root, a float inside a `json` value, a non-string audience. |
 | `SCHEMA_MISSING` | An absent required key: `id`, `action_schema_version`, `seats`, a zone's `ordering`, a stored counter's `min`/`initial`, `owner_id` where required, `control.initial_phase` when `phases` is given. |
 | `INVALID_VALUE` | A value out of range or not allowed: bad id charset or length, an enum value not in its list, `count: 0`, a `list`/`count` mix, a team without seats, an unsafe integer, `lo > hi`, a malformed placeholder, a `turn_order` that omits a seat, a canonical-profile violation found in the final identity check. |
-| `DUPLICATE_ID` | The same id twice in one namespace (reported at the later occurrence, naming the id): seats, teams, zones and templates, counters, cards, roles (also a built-in name), phases, pointers, meta schemas, view keys, conservation groups and their members. |
+| `DUPLICATE_ID` | The same id twice in one namespace (reported at the later occurrence, naming the id): seats, teams, zones and templates, counters, cards, roles, phases, pointers, meta schemas, view keys, conservation groups and their members. |
 | `UNKNOWN_REFERENCE` | A reference to an undeclared seat, team, zone, counter, phase or card: a seat's `team`, an `owner_id`, a card's `zone`, a counter group member, `turn_order` and `initial_active_seats` entries, `reaction` keys `phase:<p>`. |
 | `INVALID_VISIBILITY` | An unresolvable role key, an unknown audience, `owner`/`team` on an unowned entity, or a field without a valid `public`/`subject`/`secret` visibility. |
-| `RESERVED_NAME` | A meta schema id starting with `engine.`. |
+| `RESERVED_NAME` | A meta schema id starting with `engine.`, or a custom role id equal to a built-in role (`player`, `dealer`, `auditor`, `render`). |
 | `MISSING_REDUCER` | A meta schema with no `reducer`. |
 | `MISSING_HOOK_MODULE` | A reducer or hook reference while `hooks.module` is not set. |
 | `UNKNOWN_HOOK_EXPORT` | A referenced name that is not among the exports of the supplied bundle. |
@@ -432,7 +432,7 @@ The registry also reports `DUPLICATE_ID` (path `<dir>/id`) when two directories 
 
 ## What this schema does not do yet
 
-- **Visibility has no run-time effect yet.** The `roles`, `visibility`, field `visibility` and `view_keys` declarations are validated, stored and part of a definition's identity. Turning them into who can see what, and the meaning of the `owner` and `team` audiences and of custom roles, belongs to the visibility and projection phase (Phase 3).
+- **Visibility is applied by the projector, not the compiler.** The `roles`, `visibility`, field `visibility` and `view_keys` declarations are validated, stored and part of a definition's identity; their meaning (the `owner` and `team` audiences, custom roles, grants) is in [visibility.md](./visibility.md).
 - **Hooks and reducers are not executed.** The bundle is built, hashed and checked by name only. Running hooks, binding reducer functions to the compiled definition, time and cost limits belong to Phase 4. Until then a `meta` action for a declared schema fails with `REDUCER_ERROR` ("reducer not bound").
 - **Derived counters** are limited to the size of one fixed zone.
 - **Gate rules and timeouts** (quorum, `timeout_policy`), `carry_over` data and setup parameters are not part of the definition.

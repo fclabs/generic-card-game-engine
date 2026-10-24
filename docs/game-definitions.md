@@ -28,7 +28,7 @@ Four pieces turn it into a running definition:
 
 The split is deliberate: everything that touches files, the YAML library, the bundler or the environment lives in `packages/config`; the compiler and the hashes are pure so they can run anywhere the kernel runs. A malformed definition fails at load with the exact path and entity, not at the first move of a live game.
 
-**Not in this phase.** Visibility semantics (compiling the declarations into who-sees-what: Phase 3), hook execution (running hooks, the time and cost limits on them and binding reducer functions to a compiled definition: Phase 4) and a registry service (remote bundles, hot reload, pinning: Phase 14) are later phases. The bundle is built, hashed and checked by name; it is never executed.
+**Not in this phase.** Hook execution (running hooks, the time and cost limits on them and binding reducer functions to a compiled definition: Phase 4) and a registry service (remote bundles, hot reload, pinning: Phase 14) are later phases. The bundle is built, hashed and checked by name; it is never executed.
 
 ## Writing and checking a game
 
@@ -150,7 +150,7 @@ Decisions that bind anyone reading or extending this code.
 - *Generated-id faults are reported once per generator.* A generator producing 10 000 cards with the same bad pattern reports its first offender and stops.
 - *Metadata is type-checked once per generator, statically.* A placeholder that is exactly one token is checked against the axis's value kinds; mixed text is a string. This costs one check instead of one per card and never reports the same fault 10 000 times. Nested `json` values are never substituted.
 - *The ceiling constrains declared values, not the default.* An absent `cascade_cap` is 16 without a ceiling check; clamping it to the ceiling would make a game's identity depend on the server's settings. A declared value above the ceiling is `LIMIT_EXCEEDED`. The ceiling is the server's `limits.cascade_cap.max`; the game's own range is 1 to 256.
-- *Built-in role names are `DUPLICATE_ID`, not `RESERVED_NAME`.* `RESERVED_NAME` means exactly the `engine.` schema-id prefix.
+- *Built-in role names are `RESERVED_NAME`.* A custom role id equal to `player`, `dealer`, `auditor` or `render` is `RESERVED_NAME` (reported at `roles[i].id`); a custom role id declared twice is `DUPLICATE_ID`. `RESERVED_NAME` also covers the `engine.` schema-id prefix.
 - *`MISSING_HOOK_MODULE` applies to any reference* (reducer or hook): a hook cannot resolve without a module. It is reported once, at the first reference; the bundle checks come last.
 - *Hook and reducer names are JavaScript identifiers* (`default` works, `a-b` does not), because they are looked up as exports.
 - *`initialMetadata` is checked by the kernel too.* A card's initial metadata must match its declared schema, mirroring the rule `set_metadata` enforces (declared field, then type). The compiler reports a path-bearing error first; the kernel's structural check is the backstop.
@@ -183,7 +183,7 @@ Decisions that bind anyone reading or extending this code.
 
 ## Limitations
 
-- **Visibility is declared, not applied.** `visibility`, field visibility, `roles` and `view_keys` are validated, stored and part of the identity, and nothing yet changes what a participant receives (Phase 3).
+- **Visibility is applied by the projector, not by the compiler.** `visibility`, field visibility, `roles` and `view_keys` are validated, stored and part of the identity; what they mean for a viewer is defined in [visibility.md](./visibility.md). A built-in role id (`player`, `dealer`, `auditor`, `render`) used as a custom role id is `RESERVED_NAME`.
 - **Hooks and reducers are never run.** The manifest lists what the bundle should export; nothing yet checks that the module's actual exports equal it. Binding reducer functions onto the compiled definition and verifying them is Phase 4. Until then actions that need a reducer fail with `REDUCER_ERROR`.
 - **No type checking of hooks.** esbuild strips types, so a type error in `hooks.ts` is not reported by `pnpm bundle:games`, and `pnpm typecheck` does not cover `games/` yet.
 - **Hook code cannot import Node built-ins or npm packages.** Only files inside the game directory resolve. A violation is `BUNDLE_INVALID`.

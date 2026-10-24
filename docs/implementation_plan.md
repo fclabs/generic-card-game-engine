@@ -124,6 +124,8 @@ For this graph to hold, P1 owns the Rule SPI types (including `Reducer`) and the
 
 ## Phase 3 — Visibility, projection and replay
 
+**Status:** Done (as built; see [visibility.md](./visibility.md) and [replay-package.md](./replay-package.md)). As built: `Projector` functions are `projectView`, `projectDelta`, `projectLogEntry` and `wouldReveal`; roles are declared in the definition only (the engine ships no spectator; see the spectator recipe in visibility.md); `Replayer` is `rebuild` and `advance`, `Forker` is `forkFromSeq`; the upgrader chain is `PACKAGE_UPGRADERS` with `assertUpgraderChain`, and one version (`1`) exists today. Enforced by one added dependency rule (`core-privileged-batch-opener`). `decodeCanonical` was added to the canonical module without changing profile v1.
+
 **Goal:** Guarantee that no participant ever receives data outside their entitlement, and that any session can be replayed, exported and forked identically.
 
 **Scope**

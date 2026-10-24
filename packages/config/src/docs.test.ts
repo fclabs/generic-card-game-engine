@@ -224,11 +224,7 @@ describe("documentation (VC-273)", () => {
     });
 
     it("names the later phases that own what this one does not do", () => {
-      for (const phrase of [
-        "visibility semantics",
-        "hook execution",
-        "registry service",
-      ]) {
+      for (const phrase of ["hook execution", "registry service"]) {
         expect(text.toLowerCase().includes(phrase), phrase).toBe(true);
       }
     });
@@ -278,6 +274,74 @@ describe("documentation (VC-273)", () => {
     }
   });
 
+  describe("visibility.md and replay-package.md", () => {
+    const visibility = doc("visibility.md");
+    const replay = doc("replay-package.md");
+    const both = `${visibility}\n${replay}`;
+
+    it("name every projector, package, replay and fork function", () => {
+      expectMentions(both, [
+        "projectView",
+        "projectDelta",
+        "projectLogEntry",
+        "wouldReveal",
+        "sealBatch",
+        "encodePackage",
+        "decodePackage",
+        "buildPackage",
+        "decodeCanonical",
+        "createReplayer",
+        "rebuild",
+        "advance",
+        "forkFromSeq",
+        "assertUpgraderChain",
+        "CURRENT_ACTION_SCHEMA_VERSION",
+        "PACKAGE_UPGRADERS",
+      ]);
+    });
+
+    it("lists every package error code", () => {
+      expectMentions(replay, [
+        "PACKAGE_TOO_LARGE",
+        "PACKAGE_SYNTAX",
+        "PACKAGE_DUPLICATE_KEY",
+        "PACKAGE_UNKNOWN_KEY",
+        "PACKAGE_SCHEMA",
+        "PACKAGE_FORMAT_VERSION",
+        "PACKAGE_LOG_GAP",
+        "REPLAY_INVALID",
+        "REPLAY_MISMATCH",
+      ]);
+    });
+
+    it("has a worked example per built-in role and the opaque-id advice", () => {
+      for (const role of ["player", "render", "dealer", "auditor"]) {
+        expect(visibility.includes(`### \`${role}\``), role).toBe(true);
+      }
+      expect(visibility).toContain("opaque ids");
+      expect(visibility).toContain("A spectator role");
+    });
+
+    it("stand alone: no reference to plans, specs, iterations or checklists", () => {
+      expect(
+        /03-phase-3|plan-artifacts|iteration [0-9]|\bVC-3|\bPFR-/i.test(both),
+      ).toBe(false);
+    });
+
+    it("canonical-json-profile.md lists the package schema and keeps profile v1", () => {
+      const profile = doc("canonical-json-profile.md");
+      expect(profile).toContain("replayPackageSchema");
+      expect(profile).toContain("decodeCanonical");
+      expect(profile).toContain("profile v1 is unchanged");
+    });
+
+    it("README.md links both documents", () => {
+      const text = readFileSync(join(REPO_ROOT, "README.md"), "utf8");
+      expect(text).toContain("docs/visibility.md");
+      expect(text).toContain("docs/replay-package.md");
+    });
+  });
+
   it("no document names the removed function-presence flags", () => {
     for (const name of readdirSync(join(REPO_ROOT, "docs"))) {
       if (!name.endsWith(".md")) continue;
@@ -299,7 +363,7 @@ describe("documentation (VC-273)", () => {
     for (const file of files) {
       const text = readFileSync(file, "utf8");
       expect(
-        /02-phase-2|plan-artifacts/.test(text),
+        /0[0-9]-phase-[0-9]|plan-artifacts/.test(text),
         `${file} points at planning artifacts`,
       ).toBe(false);
     }

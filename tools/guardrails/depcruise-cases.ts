@@ -118,6 +118,17 @@ export const depcruiseCases: readonly DepcruiseCase[] = [
     expect: [],
     vc: "VC-032",
   },
+  // VC-337 (Phase 3): the opener of PrivilegedBatch is importable only from core visibility/replay
+  {
+    id: "core-privileged-batch-opener-app",
+    expect: ["core-privileged-batch-opener"],
+    vc: "VC-337",
+  },
+  {
+    id: "core-privileged-batch-opener-allowed",
+    expect: [],
+    vc: "VC-337",
+  },
   // VC-033
   {
     id: "no-circular-intra",
@@ -137,7 +148,7 @@ export const depcruiseCases: readonly DepcruiseCase[] = [
   },
 ];
 
-/** The 12 named §7.3 dependency-cruiser rules (stable identifiers). */
+/** The 12 named §7.3 dependency-cruiser rules plus the Phase 3 opener rule (PFR-032), stable identifiers. */
 export const SECTION_73_RULES: readonly string[] = [
   "layer-core-imports-nothing",
   "layer-helpers-core-only",
@@ -151,4 +162,5 @@ export const SECTION_73_RULES: readonly string[] = [
   "core-no-node",
   "no-circular",
   "no-undeclared-deps",
+  "core-privileged-batch-opener",
 ] as const;

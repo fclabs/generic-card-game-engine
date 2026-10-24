@@ -150,6 +150,21 @@ module.exports = {
       },
     },
     {
+      name: "core-privileged-batch-opener",
+      comment:
+        "only packages/core/{src,dist}/visibility/** and packages/core/{src,dist}/replay/** may import the open-batch module (PFR-032).",
+      severity: "error",
+      from: {
+        pathNot: "(^|/)packages/core/(src|dist)/(visibility|replay)/",
+      },
+      to: {
+        path: [
+          "(^|/)packages/core/(src|dist)/visibility/open-batch(\\.d)?\\.(ts|js)$",
+          "^@cge/core/.*open-batch",
+        ],
+      },
+    },
+    {
       name: "no-circular",
       comment: "no import cycles within or across packages (FR-028).",
       severity: "error",

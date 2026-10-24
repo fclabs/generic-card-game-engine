@@ -6,7 +6,7 @@ The byte format that every state digest, content hash and replay comparison in t
 
 `packages/core/src/replay/canonical/golden-vectors.json`
 
-The implementation lives in `packages/core/src/replay/canonical/` and is exported from `@cge/core` as `canonicalize`, `stateDigest`, `sha256Hex`, `CanonicalError` and the type `CanonicalSchema`. Nothing else in the engine serialises state for identity purposes.
+The implementation lives in `packages/core/src/replay/canonical/` and is exported from `@cge/core` as `canonicalize`, `decodeCanonical`, `stateDigest`, `sha256Hex`, `CanonicalError` and the type `CanonicalSchema`. Nothing else in the engine serialises state for identity purposes. The replay package format ([replay-package.md](./replay-package.md)) is written with this same profile; its schema is listed [below](#the-replay-package-schema).
 
 ## Overview
 
@@ -14,6 +14,7 @@ The implementation lives in `packages/core/src/replay/canonical/` and is exporte
 canonicalize(schema: CanonicalSchema, value: unknown): Uint8Array // throws CanonicalError
 stateDigest(definition, state): string                            // lower-case hex SHA-256
 sha256Hex(bytes: Uint8Array): string
+decodeCanonical(schema, bytes): Result<unknown, readonly PackageError[]>  // the inverse of canonicalize
 ```
 
 `canonicalize` does not inspect a value and guess its shape. The caller passes a **schema**, a plain data tree that says which fields exist, in which order they are written and which node kind each one is. The value must fit the schema exactly; anything that does not fit is a `CanonicalError`. `stateDigest` builds the schema of a session state from the game definition, canonicalizes the state with it and hashes the bytes.
@@ -153,9 +154,36 @@ Defined in `packages/core/src/replay/canonical/definition-schema.ts` (module-lev
 
 Sequences (cards, seats, zones, hook lists) keep their order, which is therefore semantic; `idMap` collections are sorted. Optional members are absent, never `undefined`. A definition produced by `compileDefinition` has already passed this schema, so hashing it never throws; a hand-built definition outside the profile (a float in `initialMetadata`, a lone surrogate) throws `CanonicalError`. The schema is frozen like the rest of the profile: any change to a field, its type or its order changes every definition id, and the committed expected hashes next to the tests pin it. The identity schema does not appear in the session-state digest; `stateDigest` still uses only the session state schema above.
 
+## `decodeCanonical`
+
+`decodeCanonical(schema, bytes)` is the inverse of `canonicalize`: given the same schema it reads bytes back into a value (`bigint` nodes are rebuilt from their decimal strings). It was added **without changing profile v1**: it only reads, `canonicalize` is untouched and every golden vector, identity and digest is byte-identical.
+
+It uses a hand-written UTF-8 decoder and tokenizer, not `JSON.parse`, because `JSON.parse` silently keeps the last of two duplicate keys and rounds integers beyond 2^53, and the profile forbids both. It never throws; it returns up to 100 path-bearing errors (`PACKAGE_SYNTAX`, `PACKAGE_DUPLICATE_KEY`, `PACKAGE_UNKNOWN_KEY`, `PACKAGE_SCHEMA`; the full list of codes is in [replay-package.md](./replay-package.md#package-errors)). Reading is **tolerant of formatting**: any whitespace, any object key order and any pair order of an `idMap` is accepted; writing is always canonical. It is **strict about content**: exact schema, safe integers only (a float, an exponent, `-0` or a value above 2^53 - 1 is a `PACKAGE_SCHEMA` error), `bigint` only as `^(0|-?[1-9][0-9]*)$` strings, lone surrogates rejected in values and keys, `json` nesting at most 64 levels (as in the encoder).
+
+## The replay package schema
+
+A replay package is canonicalised with one more schema, `replayPackageSchema` (`packages/core/src/replay/package-schema.ts`, exported from `@cge/core`). It is not part of profile v1's rules; it is a schema written in v1's node kinds, so profile v1 is unchanged. Its fields, **in this order**:
+
+| # | Field | Node |
+|---|-------|------|
+| 1 | `formatVersion` | `int` (always `1`) |
+| 2 | `sessionId` | `string` |
+| 3 | `definition` | `{ id, gameId, contentHash }`, all `string` |
+| 4 | `actionSchemaVersion` | `int` |
+| 5 | `initial` | the session state schema (below) with `id` first and without `derivedCounters`; card `metadata` and `meta` partitions are `json` nodes |
+| 6 | `params` | `json` |
+| 7 | `log` | `array` of `{ seq, eventId, principal, actions }`: `int`, `string`, `string`, `array` of the action node |
+| 8 | `receipts` | `array` of `{ principal, eventId, receipt }`, `receipt` = `{ fingerprint, result, errorCode, seq, detail, privileged }`: `string`, `json`, `json`, `json`, `json`, `bool` |
+| 9 | `digests` | `array` of `{ seq, digest }`: `int`, `string` |
+| 10 | `forkedFrom` | optional `{ sessionId, seq }`: `string`, `int` |
+
+**The action node** is one `object`: `kind` (`string`) first, then every payload field of every action kind, sorted by name, each `optional`: `active_seats`, `amount` (`bigint`), `boundary`, `card_id`, `counter_id`, `delta` (`bigint`), `direction` (`int`), `fields` (`json`), `from_counter`, `from_zone`, `grant_id`, `grantee`, `grantee_principal`, `keys`, `mode`, `op`, `orientation`, `outcome` (`json`), `owner`, `payload` (`json`), `permutation`, `phase`, `player_id`, `pointer` (`json`), `ratio` (`{ num, den }`, both `bigint`), `remainder_to`, `schema_id`, `scope` (`json`), `seat_id`, `status`, `steps` (`int`), `target` (`json`), `team_id`, `template`, `to_counter`, `to_position` (`int`), `to_state`, `to_zone`, `zone`, `zone_id`, `zones_to_create`. The profile has no tagged union, so one node serves every kind; that an action's fields fit its kind is checked by the replayer, not by the schema.
+
+**The state in a package** has the digest schema's field order with `id` first and no `derivedCounters` (computed, never stored). Where the digest schema consults the definition (card metadata, meta partitions) the package uses `json`; for engine-produced values `json` and the typed nodes write identical bytes, so a package encodes and decodes without a definition. Whether `initial` fits the definition is verified by the replayer, which digests it under the definition's own schema.
+
 ## Golden vectors
 
-`packages/core/src/replay/canonical/golden-vectors.json` holds 35 vectors. Each entry is `{ name, description, schema, input, expectedText, expectedHex, expectedDigest }`:
+The committed package example `packages/core/src/replay/golden-package.json` is the golden file of the package schema (a 12-transaction session covering every primitive, a gate, grants and a shuffle; it is compared byte for byte with `encodePackage`). `packages/core/src/replay/canonical/golden-vectors.json` holds 35 vectors. Each entry is `{ name, description, schema, input, expectedText, expectedHex, expectedDigest }`:
 
 - `schema` is the canonical schema as plain JSON;
 - `input` is the value, encoded by schema position (positions typed `bigint` hold a decimal string);

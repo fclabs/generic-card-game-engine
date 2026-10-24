@@ -1,6 +1,11 @@
 /**
  * Load-time definition errors (spec DFR-030). These are NOT `EngineError`
  * codes: the closed union of KFR-002 is unchanged.
+ *
+ * `RESERVED_NAME` covers the `engine.` meta-schema id prefix and, since
+ * Phase 3 (PFR-007), a `roles[].id` equal to a built-in role (`player`,
+ * `dealer`, `auditor`, `render`). `DUPLICATE_ID` still covers a repeated
+ * custom role id.
  */
 
 /** Every code a definition failure can carry (22). */

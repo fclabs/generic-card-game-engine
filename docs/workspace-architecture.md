@@ -30,6 +30,21 @@ Edges are expressed three ways so they fail early and consistently:
 2. `package.json` `dependencies` using `workspace:*` `@cge/*` only, with one deliberate exception: `packages/config` also has the npm runtime dependencies `yaml`, `zod` and `esbuild`, each at an exact version (`packages/core` has no `dependencies` at all)
 3. `dependency-cruiser` named rules (path **or** `@cge/*` specifier, including relative paths into another package’s `src`/`dist`)
 
+Beyond the layering rules, the named rule `core-privileged-batch-opener` lets only `packages/core/src/visibility/**` and `packages/core/src/replay/**` import the `open-batch` module that opens a `PrivilegedBatch` (the opaque handle to a committed transaction; see [visibility.md](./visibility.md#fail-closed-types)). The rule also matches the built output (`packages/core/dist/...`) and `@cge/core/**open-batch` specifiers, so a file under another package, or a fixture tree, importing it fails `pnpm depcheck`. Tests beside the allowed sources are allowed too.
+
+The named dependency rules that `pnpm depcheck` enforces, thirteen in all (the guardrail suite lists them in `SECTION_73_RULES`, and a fixture tree proves each one fails when violated):
+
+| Rule | Forbids |
+|------|---------|
+| `layer-core-imports-nothing` | `core` importing any other workspace package |
+| `layer-helpers-core-only`, `layer-config-core-only`, `layer-app-core-only` | those packages importing anything but `core` |
+| `layer-adapters-no-server`, `layer-adapters-no-adapters`, `layer-adapters-allowed-only` | an adapter importing `server`, another adapter, or anything outside `core`, `app`, `config` |
+| `layer-server-no-conformance`, `layer-conformance-leaf` | `server` importing `conformance`; any `packages/**` package importing `conformance` |
+| `core-no-node` | any `node:*` or Node built-in import in `packages/core` |
+| `core-privileged-batch-opener` | opening a `PrivilegedBatch` outside `core/visibility` and `core/replay` |
+| `no-circular` | circular dependencies |
+| `no-undeclared-deps` | importing a package not declared in `package.json` |
+
 Intra-package imports use relative paths ending in `.js` (NodeNext ESM), never `@cge/<self>`.
 
 Package names are `@cge/<dir>` for top-level packages and tools, and `@cge/adapter-<dir>` for adapters. Exactly thirteen workspace members today (twelve under `packages/**` plus `@cge/guardrails`). The local ESLint plugin lives in a plain `eslint/` directory so it does not become a fourteenth member.
@@ -57,13 +72,14 @@ Rules are implemented in a local plugin (`eslint/cge-plugin.mjs`) with exact ids
 | `errors/` | `ErrorCode` union and `ERROR_CODES`, `EngineError`, `GameRejection`, `Result`, `ok` / `err` |
 | `session/` | branded ids and guards, `Snapshot` / `deepFreeze`, state types, `createSession`, `maskGates`, `nextZoneId`, `ratioRound`, the seeded PRNG, action and macro types with `validateAction`, and `apply/` (the pipeline: admission, validation, expansion, `primitives/`, reducers, invariants, conservation, commit) |
 | `definition/` | `CompiledGameDefinition` and its part types, `assertDefinitionStructure`, `definitionData`; `compile/` (the pure `game.yaml` compiler: `compileDefinition`, one module per section, strict readers, the error collector and `DEFINITION_ERROR_CODES`, limits, `definitionNeedsBundle`); `identity.ts` (`definitionContentHash`, `hookBundleHash`, `computeDefinitionId`); `identity-expected.json` and `fixtures/floor-definition.json` (committed hashes and the performance-floor fixture). See [game-definitions.md](./game-definitions.md) |
-| `replay/canonical/` | `canonicalize`, `CanonicalSchema`, `CanonicalError`, `stateDigest`, pure-TypeScript SHA-256 and `golden-vectors.json` (see [canonical-json-profile.md](./canonical-json-profile.md)); `replay/index.ts` re-exports it |
+| `replay/canonical/` | `canonicalize`, `decodeCanonical` (`decode.ts`), `CanonicalSchema`, `CanonicalError`, `stateDigest`, pure-TypeScript SHA-256 and `golden-vectors.json` (see [canonical-json-profile.md](./canonical-json-profile.md)); `replay/index.ts` re-exports it |
+| `replay/` | the replay package and the replay services (see [replay-package.md](./replay-package.md)): `package-schema.ts` (`replayPackageSchema`), `package.ts` (`ReplayPackage`, `encodePackage`, `decodePackage`, `buildPackage`), `replayer.ts` (`createReplayer`, `rebuild`, `advance`), `upgrade.ts` (`PackageUpgrader`, `PACKAGE_UPGRADERS`, `CURRENT_ACTION_SCHEMA_VERSION`, `assertUpgraderChain`, `upgradeToCurrent`), `forker.ts` (`forkFromSeq`), `replay-error.ts` (`ReplayError`), `resolved-definition.ts` (`ResolvedDefinition`) and the committed `golden-package.json` and `fixtures/` |
 | `spi/` | rule SPI types only |
 | `ports/` | port interfaces and payload types only, including `DefinitionRegistry`, `RegistryError` and `DefinitionSummary` (interface-only: its emitted JavaScript is empty) |
-| `visibility/` | reserved for the projection layer; still an empty module |
+| `visibility/` | the projection layer (see [visibility.md](./visibility.md)): `roles.ts` (`buildRoleRegistry`, `validateViewer`), `policy.ts` (`buildVisibilityPolicy`, `resolveAudience`, `isEntitled`), `entitlement.ts` (grant-aware entitlement), `project-view.ts` (`projectView`), `project-delta.ts` (`projectDelta`, `projectLogEntry`), `would-reveal.ts` (`wouldReveal`), `make-view.ts` and `make-delta.ts` (the only constructors of the branded `View` and `Delta`), `privileged-batch.ts` (`sealBatch`) and `open-batch.ts` (the opener the dependency rule guards, never exported) |
 | `util/` | internal helpers (UTF-8 encoder), not exported from the package |
 
-Conventions inside the package: unit tests are `*.test.ts` next to the source; shared test builders and generators are `*.testing.ts` (excluded from the production `tsconfig.json`, compiled only by `tsconfig.test.json`, subject to the determinism lint and never exported from an index); committed fixtures (`golden-vectors.json`, `prng-vectors.json`, `golden-stream.json`) sit beside the tests that assert them. A few tests read `packages/core/dist` (the emitted `spi` and `ports` JavaScript, and a child process that recompiles a definition in a second Node process) and so rely on the build that `pnpm test` runs first. `packages/core/package.json` has no runtime `dependencies`, and only `fast-check` and `vitest` as exact-pinned `devDependencies`.
+Conventions inside the package: unit tests are `*.test.ts` next to the source; shared test builders and generators are `*.testing.ts` (excluded from the production `tsconfig.json`, compiled only by `tsconfig.test.json`, subject to the determinism lint and never exported from an index); committed fixtures (`golden-vectors.json`, `prng-vectors.json`, `golden-stream.json`, `golden-package.json`; the last is canonical bytes on one line and is listed in `.prettierignore`) sit beside the tests that assert them. A few tests read `packages/core/dist` (the emitted `spi` and `ports` JavaScript, and a child process that recompiles a definition in a second Node process) and so rely on the build that `pnpm test` runs first. The visibility and replay property tests run a fixed seed list and take about 95 seconds (visibility) and a few seconds (replay equivalence); `CGE_VISIBILITY_RUNS`, `CGE_REPLAY_RUNS` and `CGE_EDGE_RUNS` shorten them for a quick local run. `packages/core/package.json` has no runtime `dependencies`, and only `fast-check` and `vitest` as exact-pinned `devDependencies`.
 
 ## `packages/config` contents
 
